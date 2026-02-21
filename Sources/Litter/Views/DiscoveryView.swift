@@ -16,6 +16,15 @@ struct DiscoveryView: View {
         ZStack {
             LitterTheme.backgroundGradient.ignoresSafeArea()
             List {
+                Section {
+                    HStack {
+                        Spacer()
+                        BrandLogo(size: 86)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
                 if discovery.servers.contains(where: { $0.source == .local }) {
                     localSection
                 }
@@ -25,7 +34,8 @@ struct DiscoveryView: View {
             .scrollContentBackground(.hidden)
             .refreshable { discovery.startScanning() }
         }
-        .navigationTitle("litter")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

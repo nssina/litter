@@ -6,10 +6,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("litter")
-                .font(.system(.largeTitle, design: .monospaced))
-                .fontWeight(.bold)
-                .foregroundColor(LitterTheme.accent)
+            BrandLogo(size: 112)
             Text("Open the sidebar to start a session")
                 .font(.system(.body, design: .monospaced))
                 .foregroundColor(LitterTheme.textMuted)

@@ -79,10 +79,7 @@ struct LaunchView: View {
         ZStack {
             LitterTheme.backgroundGradient.ignoresSafeArea()
             VStack(spacing: 24) {
-                Text("▸ litter")
-                    .font(.system(.largeTitle, design: .monospaced))
-                    .fontWeight(.bold)
-                    .foregroundColor(LitterTheme.accent)
+                BrandLogo(size: 132)
                 Text("AI coding agent on iOS")
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(LitterTheme.textMuted)

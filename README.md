@@ -77,3 +77,12 @@ xcodebuild -project Litter.xcodeproj -scheme LitterRemote -configuration Debug -
 - `third_party/codex/`: upstream Codex source (submodule)
 - `patches/codex/ios-exec-hook.patch`: iOS-specific hook patch applied to submodule
 - `Sources/Litter/Bridge/`: Swift bridge + JSON-RPC client
+- `Sources/Litter/Resources/brand_logo.svg`: source logo (SVG)
+- `Sources/Litter/Resources/brand_logo.png`: in-app logo image used by `BrandLogo`
+- `Sources/Litter/Assets.xcassets/AppIcon.appiconset/`: generated app icon set
+
+## Branding assets
+
+- Home/launch branding uses `BrandLogo` (`Sources/Litter/Views/BrandLogo.swift`) backed by `brand_logo.png`.
+- The app icon is generated from the same logo and stored in `AppIcon.appiconset`.
+- If logo art changes, regenerate icon sizes from `Icon-1024.png` (or re-run your ImageMagick resize pipeline) before building.
