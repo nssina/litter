@@ -10,6 +10,8 @@ use tokio::runtime::Runtime;
 
 #[cfg(target_os = "ios")]
 mod ios_exec;
+#[cfg(target_os = "android")]
+mod android_jni;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 

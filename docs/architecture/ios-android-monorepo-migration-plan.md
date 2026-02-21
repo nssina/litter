@@ -9,7 +9,8 @@
 - [x] Phase 2: Moved shared Rust bridge and Codex submodule paths.
 - [x] Phase 3: Moved iOS app into `apps/ios` and revalidated build.
 - [x] Phase 4: Expanded Android project with `core` and `feature/*` modules.
-- [ ] Phase 5: Add Android Rust bridge/JNI integration.
+- [x] Phase 5: Added Android Rust bridge/JNI integration and build script.
+- Note: Android Rust artifact build still requires local Android NDK + toolchain setup (`cargo-ndk`, clang, OpenSSL cross env).
 
 ## Goals
 1. Keep iOS shipping while introducing Android native app support.
@@ -180,4 +181,4 @@ Exit criteria:
 7. `docs: refresh build and release guides`
 
 ## Immediate Next Execution Step
-- Execute Phase 5: wire Rust bridge artifacts into Android (JNI + `.so` packaging).
+- Execute Phase 6: split CI lanes for iOS, Android, and shared Rust bridge.

@@ -1269,6 +1269,7 @@ dependencies = [
  "codex-app-server",
  "codex-core",
  "codex-utils-cli",
+ "jni",
  "tokio",
 ]
 
