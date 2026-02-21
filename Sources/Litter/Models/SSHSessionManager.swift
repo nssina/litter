@@ -127,7 +127,7 @@ actor SSHSessionManager {
 
     private func resolveServerLaunchCommand(client: SSHClient) async throws -> ServerLaunchCommand? {
         let script = """
-        for f in "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+        for f in "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.zprofile" "$HOME/.zshrc"; do
           [ -f "$f" ] && . "$f" 2>/dev/null
         done
         if command -v codex >/dev/null 2>&1; then
@@ -163,7 +163,7 @@ actor SSHSessionManager {
         case .codexAppServer(let executable):
             launch = "\(shellQuote(executable)) --listen \(listenArg)"
         }
-        let profileInit = "for f in \"$HOME/.profile\" \"$HOME/.bash_profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do [ -f \"$f\" ] && . \"$f\" 2>/dev/null; done;"
+        let profileInit = "for f in \"$HOME/.profile\" \"$HOME/.bash_profile\" \"$HOME/.bashrc\" \"$HOME/.zprofile\" \"$HOME/.zshrc\"; do [ -f \"$f\" ] && . \"$f\" 2>/dev/null; done;"
         return "\(profileInit) nohup \(launch) </dev/null >\(shellQuote(logPath)) 2>&1 & echo $!"
     }
 
