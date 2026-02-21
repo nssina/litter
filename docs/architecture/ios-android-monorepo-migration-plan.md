@@ -8,7 +8,7 @@
 - [x] Phase 1: Introduced top-level `apps/`, `shared/`, and `tools` scaffolding.
 - [x] Phase 2: Moved shared Rust bridge and Codex submodule paths.
 - [x] Phase 3: Moved iOS app into `apps/ios` and revalidated build.
-- [ ] Phase 4: Expand Android app into feature modules.
+- [x] Phase 4: Expanded Android project with `core` and `feature/*` modules.
 - [ ] Phase 5: Add Android Rust bridge/JNI integration.
 
 ## Goals
@@ -180,4 +180,4 @@ Exit criteria:
 7. `docs: refresh build and release guides`
 
 ## Immediate Next Execution Step
-- Execute Phase 4: add Android feature modules (`core`, `feature/*`) and align architecture with iOS flows.
+- Execute Phase 5: wire Rust bridge artifacts into Android (JNI + `.so` packaging).
