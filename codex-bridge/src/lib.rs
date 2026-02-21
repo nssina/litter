@@ -2,7 +2,9 @@ use codex_app_server::AppServerTransport;
 use codex_app_server::run_main_with_transport;
 use codex_core::config_loader::LoaderOverrides;
 use codex_utils_cli::CliConfigOverrides;
+use std::fs;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
@@ -25,6 +27,8 @@ fn runtime() -> &'static Runtime {
 /// Returns 0 on success, negative on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn codex_start_server(out_port: *mut u16) -> i32 {
+    init_codex_home();
+
     let port = match std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
         .map(|a| a.port())
@@ -83,3 +87,46 @@ pub extern "C" fn codex_start_server(out_port: *mut u16) -> i32 {
 /// Stop the codex app-server. Currently a no-op; connections close naturally.
 #[unsafe(no_mangle)]
 pub extern "C" fn codex_stop_server() {}
+
+fn init_codex_home() {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(existing) = std::env::var("CODEX_HOME") {
+        candidates.push(PathBuf::from(existing));
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let home = PathBuf::from(home);
+        #[cfg(target_os = "ios")]
+        {
+            candidates.push(home.join("Library").join("Application Support").join("codex"));
+            candidates.push(home.join("Documents").join(".codex"));
+        }
+        candidates.push(home.join(".codex"));
+    }
+
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        candidates.push(PathBuf::from(tmpdir).join("codex-home"));
+    }
+
+    for codex_home in candidates {
+        match fs::create_dir_all(&codex_home) {
+            Ok(()) => {
+                // SAFETY: called before app-server runtime starts handling requests.
+                unsafe {
+                    std::env::set_var("CODEX_HOME", &codex_home);
+                }
+                eprintln!("[codex-bridge] CODEX_HOME={}", codex_home.display());
+                return;
+            }
+            Err(err) => {
+                eprintln!(
+                    "[codex-bridge] failed to create CODEX_HOME candidate {:?}: {err}",
+                    codex_home
+                );
+            }
+        }
+    }
+
+    eprintln!("[codex-bridge] unable to initialize any writable CODEX_HOME location");
+}

@@ -65,6 +65,11 @@ struct DiscoveryView: View {
         .sheet(isPresented: $showManualEntry) {
             manualEntrySheet
         }
+        .alert("Connection Failed", isPresented: showConnectError, actions: {
+            Button("OK") { connectError = nil }
+        }, message: {
+            Text(connectError ?? "Unable to connect.")
+        })
     }
 
     // MARK: - Sections
@@ -211,7 +216,8 @@ struct DiscoveryView: View {
         if connected {
             onServerSelected?(server)
         } else {
-            connectError = "Failed to connect"
+            let phase = serverManager.connections[server.id]?.connectionPhase
+            connectError = phase?.isEmpty == false ? phase : "Failed to connect"
         }
     }
 
@@ -299,5 +305,16 @@ struct DiscoveryView: View {
             }
         }
 #endif
+    }
+
+    private var showConnectError: Binding<Bool> {
+        Binding(
+            get: { connectError != nil },
+            set: { newValue in
+                if !newValue {
+                    connectError = nil
+                }
+            }
+        )
     }
 }

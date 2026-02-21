@@ -36,7 +36,16 @@ final class ServerManager: ObservableObject {
     // MARK: - Server Lifecycle
 
     func addServer(_ server: DiscoveredServer, target: ConnectionTarget) async {
-        guard connections[server.id] == nil else { return }
+        if let existing = connections[server.id] {
+            if !existing.isConnected {
+                await existing.connect()
+                if existing.isConnected {
+                    await refreshSessions(for: server.id)
+                }
+            }
+            return
+        }
+
         let conn = ServerConnection(server: server, target: target)
         conn.onNotification = { [weak self] method, data in
             self?.handleNotification(serverId: server.id, method: method, data: data)

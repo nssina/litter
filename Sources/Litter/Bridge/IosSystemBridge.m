@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <TargetConditionals.h>
 
 #if TARGET_OS_SIMULATOR
@@ -12,16 +13,35 @@
 
 void codex_ios_system_init(void) {}
 
-int codex_ios_system_run(const char *cmd, char **output, size_t *output_len) {
+int codex_ios_system_run(const char *cmd, const char *cwd, char **output, size_t *output_len) {
     *output = NULL;
     *output_len = 0;
 
+    int old_cwd_fd = open(".", O_RDONLY);
+    if (cwd && chdir(cwd) != 0) {
+        if (old_cwd_fd >= 0) close(old_cwd_fd);
+        return -1;
+    }
+
     FILE *fp = popen(cmd, "r");
-    if (!fp) return -1;
+    if (!fp) {
+        if (old_cwd_fd >= 0) {
+            fchdir(old_cwd_fd);
+            close(old_cwd_fd);
+        }
+        return -1;
+    }
 
     size_t buf_size = 8192;
     char *buf = malloc(buf_size);
-    if (!buf) { pclose(fp); return -1; }
+    if (!buf) {
+        pclose(fp);
+        if (old_cwd_fd >= 0) {
+            fchdir(old_cwd_fd);
+            close(old_cwd_fd);
+        }
+        return -1;
+    }
 
     size_t total = 0;
     size_t n;
@@ -35,6 +55,10 @@ int codex_ios_system_run(const char *cmd, char **output, size_t *output_len) {
         }
     }
     int code = pclose(fp);
+    if (old_cwd_fd >= 0) {
+        fchdir(old_cwd_fd);
+        close(old_cwd_fd);
+    }
     buf[total] = '\0';
     *output = buf;
     *output_len = total;
@@ -53,21 +77,45 @@ void codex_ios_system_init(void) {
     initializeEnvironment();
 }
 
-int codex_ios_system_run(const char *cmd, char **output, size_t *output_len) {
+int codex_ios_system_run(const char *cmd, const char *cwd, char **output, size_t *output_len) {
     *output = NULL;
     *output_len = 0;
 
+    int old_cwd_fd = open(".", O_RDONLY);
+    if (cwd && chdir(cwd) != 0) {
+        if (old_cwd_fd >= 0) close(old_cwd_fd);
+        return -1;
+    }
+
     int pfd[2];
-    if (pipe(pfd) != 0) return -1;
+    if (pipe(pfd) != 0) {
+        if (old_cwd_fd >= 0) {
+            fchdir(old_cwd_fd);
+            close(old_cwd_fd);
+        }
+        return -1;
+    }
 
     FILE *wf = fdopen(pfd[1], "w");
-    if (!wf) { close(pfd[0]); close(pfd[1]); return -1; }
+    if (!wf) {
+        close(pfd[0]);
+        close(pfd[1]);
+        if (old_cwd_fd >= 0) {
+            fchdir(old_cwd_fd);
+            close(old_cwd_fd);
+        }
+        return -1;
+    }
 
     ios_setStreams(NULL, wf, wf);
     int code = ios_system(cmd);
     fflush(wf);
     fclose(wf);
     ios_setStreams(NULL, stdout, stderr);
+    if (old_cwd_fd >= 0) {
+        fchdir(old_cwd_fd);
+        close(old_cwd_fd);
+    }
 
     size_t buf_size = 8192;
     char *buf = malloc(buf_size);

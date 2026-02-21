@@ -47,10 +47,9 @@ final class ServerConnection: ObservableObject, Identifiable {
                     connectionPhase = OnDeviceCodexFeature.compiledIn ? "local-disabled" : "local-unavailable"
                     return
                 }
-                if !CodexBridge.shared.isRunning {
-                    try CodexBridge.shared.start()
-                }
-                serverURL = URL(string: "ws://127.0.0.1:\(CodexBridge.shared.port)")!
+                connectionPhase = "local-starting"
+                let port = try await CodexBridge.shared.ensureStarted()
+                serverURL = URL(string: "ws://127.0.0.1:\(port)")!
                 connectionPhase = "local-url"
             case .remote(let host, let port):
                 guard let url = websocketURL(host: host, port: port) else {
