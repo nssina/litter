@@ -72,6 +72,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,6 +98,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -116,6 +118,7 @@ import com.litter.android.state.ServerConnectionStatus
 import com.litter.android.state.ServerSource
 import com.litter.android.state.ThreadKey
 import com.litter.android.state.ThreadState
+import com.sigkitten.litter.android.R
 import io.noties.markwon.Markwon
 import kotlinx.coroutines.delay
 import java.io.File
@@ -146,6 +149,7 @@ fun LitterAppShell(appState: LitterAppState) {
                 onSelectModel = appState::selectModel,
                 onSelectReasoningEffort = appState::selectReasoningEffort,
             )
+            HorizontalDivider(color = LitterTheme.divider)
 
             if (uiState.activeThreadKey == null) {
                 EmptyState(
@@ -296,7 +300,7 @@ private fun HeaderBar(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFF0D0D0D),
+        color = Color.Transparent,
         tonalElevation = 0.dp,
     ) {
         Row(
@@ -409,7 +413,7 @@ private fun StatusDot(connectionStatus: ServerConnectionStatus) {
         when (connectionStatus) {
             ServerConnectionStatus.CONNECTING -> Color(0xFFE2A644)
             ServerConnectionStatus.READY -> LitterTheme.accent
-            ServerConnectionStatus.ERROR -> Color(0xFFFF5C5C)
+            ServerConnectionStatus.ERROR -> LitterTheme.danger
             ServerConnectionStatus.DISCONNECTED -> LitterTheme.textMuted
         }
     Box(
@@ -438,11 +442,7 @@ private fun EmptyState(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "LITTER",
-                style = MaterialTheme.typography.titleMedium,
-                color = LitterTheme.accent,
-            )
+            BrandLogo(size = 112.dp)
             Text(
                 text = "Open the sidebar to start a session",
                 style = MaterialTheme.typography.bodyMedium,
@@ -472,7 +472,7 @@ private fun SessionSidebar(
 ) {
     Surface(
         modifier = modifier,
-        color = Color(0xFF0E0E0E),
+        color = LitterTheme.surface.copy(alpha = 0.88f),
         border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
     ) {
         Column(
@@ -529,7 +529,12 @@ private fun SessionSidebar(
                         val isActive = thread.key == activeThreadKey
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable { onSessionSelected(thread.key) },
-                            color = if (isActive) Color(0xFF1A1A1A) else Color(0xFF131313),
+                            color =
+                                if (isActive) {
+                                    LitterTheme.surfaceLight.copy(alpha = 0.58f)
+                                } else {
+                                    LitterTheme.surface.copy(alpha = 0.58f)
+                                },
                             shape = RoundedCornerShape(8.dp),
                             border =
                                 androidx.compose.foundation.BorderStroke(
@@ -590,7 +595,7 @@ private fun SessionSidebar(
 
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onOpenSettings() },
-                color = Color(0xFF131313),
+                color = LitterTheme.surface.copy(alpha = 0.58f),
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
             ) {
@@ -612,6 +617,19 @@ private fun SessionSidebar(
             }
         }
     }
+}
+
+@Composable
+private fun BrandLogo(
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    Image(
+        painter = painterResource(id = R.drawable.brand_logo),
+        contentDescription = null,
+        modifier = modifier.size(size),
+        contentScale = ContentScale.Fit,
+    )
 }
 
 @Composable
@@ -767,7 +785,7 @@ private fun MessageRow(message: ChatMessage) {
             ) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF2A2A2A),
+                    color = LitterTheme.surfaceLight,
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                 ) {
                     Text(
@@ -817,7 +835,7 @@ private fun MessageRow(message: ChatMessage) {
 private fun MessageMarkdownContent(
     markdown: String,
     modifier: Modifier = Modifier,
-    textColor: Color = Color(0xFFE0E0E0),
+    textColor: Color = LitterTheme.textBody,
 ) {
     val blocks = remember(markdown) { splitMarkdownCodeBlocks(markdown) }
     Column(
@@ -918,7 +936,7 @@ private fun CodeBlockCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF111111),
+        color = LitterTheme.surface.copy(alpha = 0.8f),
         border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
     ) {
         Column {
@@ -926,7 +944,7 @@ private fun CodeBlockCard(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF181818))
+                        .background(LitterTheme.surface.copy(alpha = 0.96f))
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -934,7 +952,7 @@ private fun CodeBlockCard(
                 if (language.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF242424),
+                        color = LitterTheme.surfaceLight,
                     ) {
                         Text(
                             text = language,
@@ -970,7 +988,7 @@ private fun CodeBlockCard(
             ) {
                 Text(
                     text = code,
-                    color = Color(0xFFCCCCCC),
+                    color = LitterTheme.textBody,
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -990,7 +1008,7 @@ private fun SystemMessageCard(message: ChatMessage) {
     Surface(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF171717),
+        color = LitterTheme.surface.copy(alpha = 0.85f),
         border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
     ) {
         Column(
@@ -1041,7 +1059,7 @@ private fun SystemMessageCard(message: ChatMessage) {
                     MessageMarkdownContent(
                         markdown = markdown,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        textColor = Color(0xFFD2D2D2),
+                        textColor = LitterTheme.textSystem,
                     )
                 }
             }
@@ -1064,7 +1082,7 @@ private fun InputBar(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
-        color = Color(0xFF0D0D0D),
+        color = LitterTheme.surface,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -1073,7 +1091,7 @@ private fun InputBar(
             if (attachedImagePath != null) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF171717),
+                    color = LitterTheme.surface,
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                 ) {
                     Row(
@@ -1105,7 +1123,7 @@ private fun InputBar(
             if (!attachmentError.isNullOrBlank()) {
                 Text(
                     text = attachmentError,
-                    color = Color(0xFFFF7A7A),
+                    color = LitterTheme.danger,
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -1549,7 +1567,7 @@ private fun DirectoryPickerSheet(
                 }
 
                 error != null -> {
-                    Text(error, color = Color(0xFFFF7A7A))
+                    Text(error, color = LitterTheme.danger)
                 }
 
                 entries.isEmpty() -> {
@@ -1564,7 +1582,7 @@ private fun DirectoryPickerSheet(
                         items(entries, key = { it }) { entry ->
                             Surface(
                                 modifier = Modifier.fillMaxWidth().clickable { onNavigateInto(entry) },
-                                color = Color(0xFF131313),
+                                color = LitterTheme.surface.copy(alpha = 0.6f),
                                 shape = RoundedCornerShape(8.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                             ) {
@@ -1603,6 +1621,12 @@ private fun DiscoverySheet(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                BrandLogo(size = 86.dp)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -1617,7 +1641,7 @@ private fun DiscoverySheet(
             }
 
             if (state.errorMessage != null) {
-                Text(state.errorMessage, color = Color(0xFFFF7A7A))
+                Text(state.errorMessage, color = LitterTheme.danger)
             }
 
             if (state.servers.isEmpty() && !state.isLoading) {
@@ -1630,7 +1654,7 @@ private fun DiscoverySheet(
                     items(state.servers, key = { it.id }) { server ->
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable { onConnectDiscovered(server.id) },
-                            color = Color(0xFF131313),
+                            color = LitterTheme.surface.copy(alpha = 0.6f),
                             shape = RoundedCornerShape(8.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                         ) {
@@ -1801,13 +1825,13 @@ private fun SshLoginSheet(
                 }
                 if (state.hasSavedCredentials) {
                     TextButton(onClick = onForgetSaved) {
-                        Text("Forget Saved", color = Color(0xFFFF7A7A))
+                        Text("Forget Saved", color = LitterTheme.danger)
                     }
                 }
             }
 
             if (state.errorMessage != null) {
-                Text(state.errorMessage, color = Color(0xFFFF7A7A), style = MaterialTheme.typography.labelLarge)
+                Text(state.errorMessage, color = LitterTheme.danger, style = MaterialTheme.typography.labelLarge)
             }
 
             Button(
@@ -1844,7 +1868,7 @@ private fun SettingsSheet(
             Text("Authentication", color = LitterTheme.textSecondary, style = MaterialTheme.typography.labelLarge)
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onOpenAccount() },
-                color = Color(0xFF131313),
+                color = LitterTheme.surface.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
             ) {
@@ -1878,7 +1902,7 @@ private fun SettingsSheet(
                 connectedServers.forEach { server ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF131313),
+                        color = LitterTheme.surface.copy(alpha = 0.6f),
                         shape = RoundedCornerShape(8.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                     ) {
@@ -1898,7 +1922,7 @@ private fun SettingsSheet(
                                 )
                             }
                             TextButton(onClick = { onRemoveServer(server.id) }) {
-                                Text("Remove", color = Color(0xFFFF7A7A))
+                                Text("Remove", color = LitterTheme.danger)
                             }
                         }
                     }
@@ -1932,7 +1956,7 @@ private fun AccountSheet(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF131313),
+                color = LitterTheme.surface.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
             ) {
@@ -1957,7 +1981,7 @@ private fun AccountSheet(
                     }
                     if (accountState.status == AuthStatus.API_KEY || accountState.status == AuthStatus.CHATGPT) {
                         TextButton(onClick = onLogout, enabled = !isWorking) {
-                            Text("Logout", color = Color(0xFFFF7A7A))
+                            Text("Logout", color = LitterTheme.danger)
                         }
                     }
                 }
@@ -1974,7 +1998,7 @@ private fun AccountSheet(
             if (accountState.oauthUrl != null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF131313),
+                    color = LitterTheme.surface.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(8.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                 ) {
@@ -1988,7 +2012,7 @@ private fun AccountSheet(
                                 Text("Open Browser")
                             }
                             TextButton(onClick = onCancelLogin) {
-                                Text("Cancel", color = Color(0xFFFF7A7A))
+                                Text("Cancel", color = LitterTheme.danger)
                             }
                         }
                     }
@@ -2014,7 +2038,7 @@ private fun AccountSheet(
             }
 
             if (accountState.lastError != null) {
-                Text(accountState.lastError, color = Color(0xFFFF7A7A), style = MaterialTheme.typography.labelLarge)
+                Text(accountState.lastError, color = LitterTheme.danger, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -2050,11 +2074,11 @@ private fun serverSourceLabel(source: ServerSource): String =
 private fun serverSourceAccentColor(source: ServerSource): Color =
     when (source) {
         ServerSource.LOCAL -> LitterTheme.accent
-        ServerSource.BONJOUR -> Color(0xFF6AD9FF)
-        ServerSource.SSH -> Color(0xFFFFB454)
-        ServerSource.TAILSCALE -> Color(0xFF6E9DFF)
-        ServerSource.MANUAL -> Color(0xFFB794FF)
-        ServerSource.REMOTE -> Color(0xFFFF7A9E)
+        ServerSource.BONJOUR -> LitterTheme.accent
+        ServerSource.SSH -> LitterTheme.accent
+        ServerSource.TAILSCALE -> LitterTheme.accent
+        ServerSource.MANUAL -> LitterTheme.accent
+        ServerSource.REMOTE -> LitterTheme.accent
     }
 
 private fun cwdLeaf(path: String): String {

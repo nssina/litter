@@ -12,11 +12,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 object LitterTheme {
-    val accent = Color(0xFF00FF9C)
+    val accent = Color(0xFFB0B0B0)
     val textPrimary = Color.White
     val textSecondary = Color(0xFF888888)
     val textMuted = Color(0xFF555555)
+    val textBody = Color(0xFFE0E0E0)
+    val textSystem = Color(0xFFC6D0CA)
+    val surface = Color(0xFF1A1A1A)
+    val surfaceLight = Color(0xFF2A2A2A)
     val border = Color(0xFF333333)
+    val divider = Color(0xFF1E1E1E)
+    val danger = Color(0xFFFF5555)
 
     val backgroundBrush: Brush =
         Brush.linearGradient(
@@ -32,15 +38,15 @@ object LitterTheme {
 private val LitterColorScheme =
     darkColorScheme(
         primary = LitterTheme.accent,
-        onPrimary = Color.Black,
-        secondary = Color(0xFF8A8A8A),
-        onSecondary = Color.Black,
+        onPrimary = Color(0xFF0D0D0D),
+        secondary = LitterTheme.textSecondary,
+        onSecondary = LitterTheme.textPrimary,
         background = Color.Black,
-        onBackground = Color(0xFFE0E0E0),
-        surface = Color(0xFF111111),
-        onSurface = Color(0xFFE0E0E0),
-        error = Color(0xFFFF5B5B),
-        onError = Color.Black,
+        onBackground = LitterTheme.textBody,
+        surface = LitterTheme.surface,
+        onSurface = LitterTheme.textBody,
+        error = LitterTheme.danger,
+        onError = Color(0xFF0D0D0D),
         outline = LitterTheme.border,
     )
 
