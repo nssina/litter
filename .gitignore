@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Xcode user/workspace state
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Build outputs
+.build/
+build/
+DerivedData/
+
+# SwiftPM
+Packages/
+
+# Rust
+**/target/
+
+# Logs and temp
+*.log
+*.tmp
+
+# Local screenshots
+Simulator Screenshot*.png
