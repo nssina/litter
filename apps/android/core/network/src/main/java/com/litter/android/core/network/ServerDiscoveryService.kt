@@ -1,5 +1,8 @@
 package com.litter.android.core.network
 
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
@@ -10,19 +13,19 @@ import java.net.NetworkInterface
 import java.net.Socket
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Android discovery implementation aligned with iOS behavior where possible.
  *
- * Current coverage:
+ * Coverage:
  * - Local host candidate
+ * - Bonjour `_ssh._tcp.` browsing (best-effort)
  * - Tailscale LocalAPI peers (best-effort)
  * - ARP neighbor probing on local network
  * - Codex (port 8390) + SSH (port 22) reachability checks
- *
- * TODO:
- * - Full Bonjour mDNS browsing for `_ssh._tcp.` and Codex-specific service types.
- * - Better subnet scanning and host naming for non-ARP neighbors.
  */
 enum class DiscoverySource {
     LOCAL,
@@ -42,7 +45,9 @@ data class DiscoveredServer(
     val hasCodexServer: Boolean = false,
 )
 
-class ServerDiscoveryService {
+class ServerDiscoveryService(
+    private val context: Context? = null,
+) {
     fun discover(): List<DiscoveredServer> {
         val results = LinkedHashMap<String, DiscoveredServer>()
 
@@ -55,6 +60,13 @@ class ServerDiscoveryService {
                 source = DiscoverySource.LOCAL,
                 hasCodexServer = true,
             )
+
+        for (candidate in discoverBonjourCandidates()) {
+            val server = probeCandidate(candidate)
+            if (server != null) {
+                results[server.id] = server
+            }
+        }
 
         for (candidate in discoverTailscaleCandidates()) {
             val server = probeCandidate(candidate)
@@ -70,9 +82,7 @@ class ServerDiscoveryService {
             }
         }
 
-        // Keep deterministic ordering for UI.
-        return results
-            .values
+        return results.values
             .sortedWith(compareBy<DiscoveredServer> { sourceRank(it.source) }.thenBy { it.name.lowercase(Locale.US) })
     }
 
@@ -101,6 +111,7 @@ class ServerDiscoveryService {
         val source =
             when {
                 candidate.source == DiscoverySource.TAILSCALE -> DiscoverySource.TAILSCALE
+                candidate.source == DiscoverySource.BONJOUR -> DiscoverySource.BONJOUR
                 codexOpen -> candidate.source
                 else -> DiscoverySource.SSH
             }
@@ -108,12 +119,13 @@ class ServerDiscoveryService {
         val hasCodexServer = codexOpen
 
         val name = candidate.name.ifBlank { candidate.host }
-        val idPrefix = when (source) {
-            DiscoverySource.TAILSCALE -> "tailscale"
-            DiscoverySource.BONJOUR -> "bonjour"
-            DiscoverySource.SSH -> "ssh"
-            else -> "lan"
-        }
+        val idPrefix =
+            when (source) {
+                DiscoverySource.TAILSCALE -> "tailscale"
+                DiscoverySource.BONJOUR -> "bonjour"
+                DiscoverySource.SSH -> "ssh"
+                else -> "lan"
+            }
 
         return DiscoveredServer(
             id = "$idPrefix-${candidate.host}",
@@ -123,6 +135,100 @@ class ServerDiscoveryService {
             source = source,
             hasCodexServer = hasCodexServer,
         )
+    }
+
+    private fun discoverBonjourCandidates(timeoutMs: Long = 2_500L): List<DiscoveryCandidate> {
+        val appContext = context ?: return emptyList()
+        val nsdManager = appContext.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return emptyList()
+
+        val candidatesByIp = ConcurrentHashMap<String, DiscoveryCandidate>()
+        val done = CountDownLatch(1)
+
+        val listener =
+            object : NsdManager.DiscoveryListener {
+                override fun onStartDiscoveryFailed(
+                    serviceType: String?,
+                    errorCode: Int,
+                ) {
+                    done.countDown()
+                }
+
+                override fun onStopDiscoveryFailed(
+                    serviceType: String?,
+                    errorCode: Int,
+                ) {
+                    done.countDown()
+                }
+
+                override fun onDiscoveryStarted(serviceType: String?) = Unit
+
+                override fun onDiscoveryStopped(serviceType: String?) {
+                    done.countDown()
+                }
+
+                override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                    resolveService(nsdManager, serviceInfo) { resolved ->
+                        val host = resolved.host?.hostAddress?.trim().orEmpty()
+                        if (!isLikelyIpv4(host) || host == "127.0.0.1") {
+                            return@resolveService
+                        }
+
+                        val name = cleanHostName(resolved.serviceName)
+                        candidatesByIp[host] =
+                            DiscoveryCandidate(
+                                host = host,
+                                name = name.ifBlank { host },
+                                source = DiscoverySource.BONJOUR,
+                            )
+                    }
+                }
+
+                override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+            }
+
+        runCatching {
+            nsdManager.discoverServices("_ssh._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
+            done.await(timeoutMs, TimeUnit.MILLISECONDS)
+            nsdManager.stopServiceDiscovery(listener)
+        }
+
+        return candidatesByIp.values
+            .sortedBy { it.name.lowercase(Locale.US) }
+            .take(24)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveService(
+        nsdManager: NsdManager,
+        serviceInfo: NsdServiceInfo,
+        onResolved: (NsdServiceInfo) -> Unit,
+    ) {
+        runCatching {
+            nsdManager.resolveService(
+                serviceInfo,
+                object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(
+                        serviceInfo: NsdServiceInfo,
+                        errorCode: Int,
+                    ) = Unit
+
+                    override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                        onResolved(serviceInfo)
+                    }
+                },
+            )
+        }
+    }
+
+    private fun cleanHostName(raw: String?): String {
+        var value = raw?.trim().orEmpty()
+        if (value.endsWith(".local", ignoreCase = true)) {
+            value = value.substring(0, value.length - ".local".length)
+        }
+        if (value.endsWith('.')) {
+            value = value.dropLast(1)
+        }
+        return value
     }
 
     private fun discoverArpCandidates(): List<DiscoveryCandidate> {
@@ -163,7 +269,6 @@ class ServerDiscoveryService {
             }
         }
 
-        // Keep probe budget bounded.
         return candidates.values.take(24)
     }
 

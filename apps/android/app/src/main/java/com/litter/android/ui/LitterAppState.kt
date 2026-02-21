@@ -1,19 +1,24 @@
 package com.litter.android.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import com.litter.android.core.network.DiscoveredServer
 import com.litter.android.core.network.DiscoverySource
 import com.litter.android.core.network.ServerDiscoveryService
 import com.litter.android.state.AccountState
 import com.litter.android.state.AppState
-import com.litter.android.state.AuthStatus
 import com.litter.android.state.ChatMessage
 import com.litter.android.state.ModelOption
 import com.litter.android.state.ModelSelection
+import com.litter.android.state.SavedSshCredential
 import com.litter.android.state.ServerConfig
 import com.litter.android.state.ServerConnectionStatus
 import com.litter.android.state.ServerManager
 import com.litter.android.state.ServerSource
+import com.litter.android.state.SshAuthMethod
+import com.litter.android.state.SshCredentialStore
+import com.litter.android.state.SshCredentials
+import com.litter.android.state.SshSessionManager
 import com.litter.android.state.ThreadKey
 import com.litter.android.state.ThreadState
 import com.litter.android.state.ThreadStatus
@@ -22,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +60,23 @@ data class DiscoveryUiState(
     val errorMessage: String? = null,
 )
 
+data class SshLoginUiState(
+    val isVisible: Boolean = false,
+    val serverId: String? = null,
+    val serverName: String = "",
+    val host: String = "",
+    val port: Int = 22,
+    val username: String = "",
+    val password: String = "",
+    val useKey: Boolean = false,
+    val privateKey: String = "",
+    val passphrase: String = "",
+    val rememberCredentials: Boolean = true,
+    val hasSavedCredentials: Boolean = false,
+    val isConnecting: Boolean = false,
+    val errorMessage: String? = null,
+)
+
 data class UiShellState(
     val isSidebarOpen: Boolean = false,
     val connectionStatus: ServerConnectionStatus = ServerConnectionStatus.DISCONNECTED,
@@ -76,6 +99,7 @@ data class UiShellState(
     val accountState: AccountState = AccountState(),
     val apiKeyDraft: String = "",
     val isAuthWorking: Boolean = false,
+    val sshLogin: SshLoginUiState = SshLoginUiState(),
     val uiError: String? = null,
 )
 
@@ -142,6 +166,24 @@ interface LitterAppState : Closeable {
 
     fun connectManualServer()
 
+    fun dismissSshLogin()
+
+    fun updateSshUsername(value: String)
+
+    fun updateSshPassword(value: String)
+
+    fun updateSshUseKey(value: Boolean)
+
+    fun updateSshPrivateKey(value: String)
+
+    fun updateSshPassphrase(value: String)
+
+    fun updateSshRememberCredentials(value: Boolean)
+
+    fun forgetSshCredentials()
+
+    fun connectSshServer()
+
     fun removeServer(serverId: String)
 
     fun clearUiError()
@@ -150,6 +192,8 @@ interface LitterAppState : Closeable {
 class DefaultLitterAppState(
     private val serverManager: ServerManager,
     private val discoveryService: ServerDiscoveryService = ServerDiscoveryService(),
+    private val sshSessionManager: SshSessionManager = SshSessionManager(),
+    private val sshCredentialStore: SshCredentialStore? = null,
 ) : LitterAppState {
     private val _uiState = MutableStateFlow(UiShellState())
     override val uiState: StateFlow<UiShellState> = _uiState.asStateFlow()
@@ -167,6 +211,7 @@ class DefaultLitterAppState(
 
     override fun close() {
         observerHandle.close()
+        runCatching { runBlocking { sshSessionManager.disconnect() } }
         scope.cancel()
         serverManager.close()
     }
@@ -422,6 +467,7 @@ class DefaultLitterAppState(
                 isSidebarOpen = false,
                 showSettings = false,
                 showAccount = false,
+                sshLogin = it.sshLogin.copy(isVisible = false, isConnecting = false, errorMessage = null),
             )
         }
         refreshDiscovery()
@@ -431,6 +477,7 @@ class DefaultLitterAppState(
         _uiState.update {
             it.copy(
                 discovery = it.discovery.copy(isVisible = false, errorMessage = null),
+                sshLogin = it.sshLogin.copy(isVisible = false, isConnecting = false, errorMessage = null),
             )
         }
     }
@@ -482,7 +529,7 @@ class DefaultLitterAppState(
         val discovered = _uiState.value.discovery.servers.firstOrNull { it.id == id } ?: return
 
         if (!discovered.hasCodexServer) {
-            setUiError("SSH-only discovery found. SSH setup flow is next parity step.")
+            openSshLoginFor(discovered)
             return
         }
 
@@ -555,6 +602,241 @@ class DefaultLitterAppState(
         }
     }
 
+    override fun dismissSshLogin() {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        isVisible = false,
+                        isConnecting = false,
+                        password = "",
+                        privateKey = "",
+                        passphrase = "",
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshUsername(value: String) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        username = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshPassword(value: String) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        password = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshUseKey(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        useKey = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshPrivateKey(value: String) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        privateKey = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshPassphrase(value: String) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        passphrase = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun updateSshRememberCredentials(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        rememberCredentials = value,
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun forgetSshCredentials() {
+        val snapshot = _uiState.value.sshLogin
+        val host = snapshot.host.trim()
+        if (host.isEmpty()) {
+            return
+        }
+        sshCredentialStore?.delete(host, snapshot.port)
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    it.sshLogin.copy(
+                        hasSavedCredentials = false,
+                        rememberCredentials = false,
+                        username = "",
+                        password = "",
+                        privateKey = "",
+                        passphrase = "",
+                        errorMessage = null,
+                    ),
+            )
+        }
+    }
+
+    override fun connectSshServer() {
+        val snapshot = _uiState.value.sshLogin
+        val host = snapshot.host.trim()
+        val username = snapshot.username.trim()
+
+        if (host.isEmpty() || username.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    sshLogin = it.sshLogin.copy(errorMessage = "Username and host are required"),
+                )
+            }
+            return
+        }
+
+        if (!snapshot.useKey && snapshot.password.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    sshLogin = it.sshLogin.copy(errorMessage = "Password is required"),
+                )
+            }
+            return
+        }
+
+        if (snapshot.useKey && snapshot.privateKey.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    sshLogin = it.sshLogin.copy(errorMessage = "Private key is required"),
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                sshLogin = it.sshLogin.copy(isConnecting = true, errorMessage = null),
+            )
+        }
+
+        scope.launch {
+            val result =
+                runCatching {
+                    val credentials =
+                        if (snapshot.useKey) {
+                            SshCredentials.Key(
+                                username = username,
+                                privateKeyPem = snapshot.privateKey,
+                                passphrase = snapshot.passphrase.ifBlank { null },
+                            )
+                        } else {
+                            SshCredentials.Password(
+                                username = username,
+                                password = snapshot.password,
+                            )
+                        }
+
+                    sshSessionManager.connect(
+                        host = host,
+                        port = snapshot.port,
+                        credentials = credentials,
+                    )
+                    val remotePort = sshSessionManager.startRemoteServer()
+                    sshSessionManager.disconnect()
+
+                    if (snapshot.rememberCredentials) {
+                        sshCredentialStore?.save(
+                            host = host,
+                            port = snapshot.port,
+                            credential = snapshot.toSavedCredential(),
+                        )
+                    } else {
+                        sshCredentialStore?.delete(host, snapshot.port)
+                    }
+
+                    val resolvedHost = normalizeHostForRemoteTarget(host)
+                    ServerConfig(
+                        id = "${snapshot.serverId ?: "ssh-$resolvedHost"}-remote-$remotePort",
+                        name = snapshot.serverName.ifBlank { resolvedHost },
+                        host = resolvedHost,
+                        port = remotePort,
+                        source = ServerSource.SSH,
+                        hasCodexServer = true,
+                    )
+                }
+
+            result.onFailure { error ->
+                runCatching { sshSessionManager.disconnect() }
+                _uiState.update {
+                    it.copy(
+                        sshLogin =
+                            it.sshLogin.copy(
+                                isConnecting = false,
+                                errorMessage = error.message ?: "SSH connection failed",
+                            ),
+                    )
+                }
+            }
+
+            result.onSuccess { resolvedServer ->
+                serverManager.connectServer(resolvedServer) { connectResult ->
+                    connectResult.onFailure { error ->
+                        _uiState.update {
+                            it.copy(
+                                sshLogin =
+                                    it.sshLogin.copy(
+                                        isConnecting = false,
+                                        errorMessage = error.message ?: "Failed to connect remote server",
+                                    ),
+                            )
+                        }
+                    }
+                    connectResult.onSuccess {
+                        _uiState.update {
+                            it.copy(
+                                discovery = it.discovery.copy(isVisible = false, errorMessage = null),
+                                sshLogin = SshLoginUiState(),
+                            )
+                        }
+                        postConnectPrime()
+                    }
+                }
+            }
+        }
+    }
+
     override fun removeServer(serverId: String) {
         serverManager.removeServer(serverId)
         if (_uiState.value.connectedServers.size <= 1) {
@@ -593,6 +875,31 @@ class DefaultLitterAppState(
             accountResult.onFailure { error ->
                 setUiError(error.message ?: "Failed to refresh account")
             }
+        }
+    }
+
+    private fun openSshLoginFor(discovered: UiDiscoveredServer) {
+        val saved = sshCredentialStore?.load(discovered.host, discovered.port)
+        _uiState.update {
+            it.copy(
+                sshLogin =
+                    SshLoginUiState(
+                        isVisible = true,
+                        serverId = discovered.id,
+                        serverName = discovered.name,
+                        host = discovered.host,
+                        port = discovered.port,
+                        username = saved?.username.orEmpty(),
+                        password = saved?.password.orEmpty(),
+                        useKey = saved?.method == SshAuthMethod.KEY,
+                        privateKey = saved?.privateKey.orEmpty(),
+                        passphrase = saved?.passphrase.orEmpty(),
+                        rememberCredentials = saved != null,
+                        hasSavedCredentials = saved != null,
+                        isConnecting = false,
+                        errorMessage = null,
+                    ),
+            )
         }
     }
 
@@ -668,6 +975,36 @@ class DefaultLitterAppState(
         _uiState.update { it.copy(uiError = message) }
     }
 
+    private fun SshLoginUiState.toSavedCredential(): SavedSshCredential =
+        if (useKey) {
+            SavedSshCredential(
+                username = username.trim(),
+                method = SshAuthMethod.KEY,
+                password = null,
+                privateKey = privateKey,
+                passphrase = passphrase.ifBlank { null },
+            )
+        } else {
+            SavedSshCredential(
+                username = username.trim(),
+                method = SshAuthMethod.PASSWORD,
+                password = password,
+                privateKey = null,
+                passphrase = null,
+            )
+        }
+
+    private fun normalizeHostForRemoteTarget(host: String): String {
+        var normalized = host.trim().trim('[').trim(']').replace("%25", "%")
+        if (!normalized.contains(':')) {
+            val percent = normalized.indexOf('%')
+            if (percent >= 0) {
+                normalized = normalized.substring(0, percent)
+            }
+        }
+        return normalized
+    }
+
     private fun DiscoveredServer.toUi(): UiDiscoveredServer =
         UiDiscoveredServer(
             id = id,
@@ -703,7 +1040,19 @@ class DefaultLitterAppState(
 fun rememberLitterAppState(
     serverManager: ServerManager,
 ): LitterAppState {
-    val appState = androidx.compose.runtime.remember(serverManager) { DefaultLitterAppState(serverManager = serverManager) }
+    val appContext = LocalContext.current.applicationContext
+    val discoveryService = androidx.compose.runtime.remember(appContext) { ServerDiscoveryService(appContext) }
+    val sshSessionManager = androidx.compose.runtime.remember { SshSessionManager() }
+    val sshCredentialStore = androidx.compose.runtime.remember(appContext) { SshCredentialStore(appContext) }
+    val appState =
+        androidx.compose.runtime.remember(serverManager, discoveryService, sshSessionManager, sshCredentialStore) {
+            DefaultLitterAppState(
+                serverManager = serverManager,
+                discoveryService = discoveryService,
+                sshSessionManager = sshSessionManager,
+                sshCredentialStore = sshCredentialStore,
+            )
+        }
     androidx.compose.runtime.DisposableEffect(appState) {
         onDispose { appState.close() }
     }

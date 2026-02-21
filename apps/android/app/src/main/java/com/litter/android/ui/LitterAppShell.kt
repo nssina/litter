@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -185,6 +186,21 @@ fun LitterAppShell(appState: LitterAppState) {
                 onManualHostChanged = appState::updateManualHost,
                 onManualPortChanged = appState::updateManualPort,
                 onConnectManual = appState::connectManualServer,
+            )
+        }
+
+        if (uiState.sshLogin.isVisible) {
+            SshLoginSheet(
+                state = uiState.sshLogin,
+                onDismiss = appState::dismissSshLogin,
+                onUsernameChanged = appState::updateSshUsername,
+                onPasswordChanged = appState::updateSshPassword,
+                onUseKeyChanged = appState::updateSshUseKey,
+                onPrivateKeyChanged = appState::updateSshPrivateKey,
+                onPassphraseChanged = appState::updateSshPassphrase,
+                onRememberChanged = appState::updateSshRememberCredentials,
+                onForgetSaved = appState::forgetSshCredentials,
+                onConnect = appState::connectSshServer,
             )
         }
 
@@ -853,6 +869,125 @@ private fun DiscoverySheet(
                 enabled = state.manualHost.isNotBlank() && state.manualPort.isNotBlank(),
             ) {
                 Text("Connect Manual Server")
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SshLoginSheet(
+    state: SshLoginUiState,
+    onDismiss: () -> Unit,
+    onUsernameChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onUseKeyChanged: (Boolean) -> Unit,
+    onPrivateKeyChanged: (String) -> Unit,
+    onPassphraseChanged: (String) -> Unit,
+    onRememberChanged: (Boolean) -> Unit,
+    onForgetSaved: () -> Unit,
+    onConnect: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("SSH Login", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${state.serverName.ifBlank { state.host }} (${state.host}:${state.port})",
+                color = LitterTheme.textSecondary,
+                style = MaterialTheme.typography.labelLarge,
+            )
+
+            OutlinedTextField(
+                value = state.username,
+                onValueChange = onUsernameChanged,
+                label = { Text("Username") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { onUseKeyChanged(false) },
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (!state.useKey) LitterTheme.accent else LitterTheme.border),
+                ) {
+                    Text("Password")
+                }
+                OutlinedButton(
+                    onClick = { onUseKeyChanged(true) },
+                    modifier = Modifier.weight(1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (state.useKey) LitterTheme.accent else LitterTheme.border),
+                ) {
+                    Text("SSH Key")
+                }
+            }
+
+            if (state.useKey) {
+                OutlinedTextField(
+                    value = state.privateKey,
+                    onValueChange = onPrivateKeyChanged,
+                    label = { Text("Private Key") },
+                    placeholder = { Text("Paste private key PEM...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 5,
+                    maxLines = 10,
+                )
+                OutlinedTextField(
+                    value = state.passphrase,
+                    onValueChange = onPassphraseChanged,
+                    label = { Text("Passphrase (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            } else {
+                OutlinedTextField(
+                    value = state.password,
+                    onValueChange = onPasswordChanged,
+                    label = { Text("Password") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = state.rememberCredentials,
+                        onCheckedChange = onRememberChanged,
+                    )
+                    Text("Remember on this device", color = LitterTheme.textSecondary)
+                }
+                if (state.hasSavedCredentials) {
+                    TextButton(onClick = onForgetSaved) {
+                        Text("Forget Saved", color = Color(0xFFFF7A7A))
+                    }
+                }
+            }
+
+            if (state.errorMessage != null) {
+                Text(state.errorMessage, color = Color(0xFFFF7A7A), style = MaterialTheme.typography.labelLarge)
+            }
+
+            Button(
+                onClick = onConnect,
+                modifier = Modifier.fillMaxWidth(),
+                enabled =
+                    !state.isConnecting &&
+                        state.username.isNotBlank() &&
+                        if (state.useKey) state.privateKey.isNotBlank() else state.password.isNotBlank(),
+            ) {
+                Text(if (state.isConnecting) "Connecting..." else "Connect")
             }
         }
     }
