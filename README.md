@@ -6,10 +6,18 @@
 
 `litter` is a native iOS + Android client for Codex.
 
-Platform apps:
+## Repository layout
 
 - `apps/ios`: iOS app (`LitterRemote` and `Litter` schemes)
-- `apps/android`: Android app/module scaffold (`app`, `core/*`, `feature/*`)
+- `apps/android`: Android app
+  - `app`: Compose UI shell, app state, server manager, SSH/auth flows
+  - `core/bridge`: native bridge bootstrapping and core RPC client
+  - `core/network`: discovery services (Bonjour/Tailscale/LAN probing)
+  - `docs/qa-matrix.md`: Android parity QA matrix
+- `shared/rust-bridge/codex-bridge`: shared Rust bridge crate
+- `shared/third_party/codex`: upstream Codex submodule
+- `patches/codex`: local Codex patch set
+- `tools/scripts`: cross-platform helper scripts
 
 iOS supports:
 
@@ -89,10 +97,26 @@ Prerequisites:
 - Android SDK + build tools for API 35
 - Gradle 8.x (or wrapper, once added)
 
-Build debug APK:
+Build Android flavors:
 
 ```bash
-gradle -p apps/android :app:assembleDebug
+gradle -p apps/android :app:assembleOnDeviceDebug :app:assembleRemoteOnlyDebug
+```
+
+Run Android unit tests:
+
+```bash
+gradle -p apps/android :app:testOnDeviceDebugUnitTest :app:testRemoteOnlyDebugUnitTest
+```
+
+Start emulator and install on-device debug build:
+
+```bash
+ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools \
+  $ANDROID_SDK_ROOT/emulator/emulator -avd litterApi35
+
+adb -e install -r apps/android/app/build/outputs/apk/onDevice/debug/app-onDevice-debug.apk
+adb -e shell am start -n com.sigkitten.litter.android/com.litter.android.MainActivity
 ```
 
 Build Android Rust JNI libs (optional bridge runtime step):
@@ -108,7 +132,12 @@ Build Android Rust JNI libs (optional bridge runtime step):
 - `shared/third_party/codex/`: upstream Codex source (submodule)
 - `patches/codex/ios-exec-hook.patch`: iOS-specific hook patch applied to submodule
 - `apps/ios/Sources/Litter/Bridge/`: Swift bridge + JSON-RPC client
-- `apps/android/core/bridge/`: Android JNI/native bridge surface
+- `apps/android/app/src/main/java/com/litter/android/ui/`: Android Compose UI shell and screens
+- `apps/android/app/src/main/java/com/litter/android/state/`: Android state, transports, session/server orchestration
+- `apps/android/core/bridge/`: Android bridge bootstrap and core websocket client
+- `apps/android/core/network/`: discovery services
+- `apps/android/app/src/test/java/`: Android unit tests (runtime mode + transport policy scaffolding)
+- `apps/android/docs/qa-matrix.md`: Android parity checklist
 - `tools/scripts/build-android-rust.sh`: builds Android JNI Rust artifacts into `jniLibs`
 - `apps/ios/Sources/Litter/Resources/brand_logo.svg`: source logo (SVG)
 - `apps/ios/Sources/Litter/Resources/brand_logo.png`: in-app logo image used by `BrandLogo`
