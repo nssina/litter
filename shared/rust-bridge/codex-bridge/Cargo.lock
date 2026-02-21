@@ -1270,6 +1270,7 @@ dependencies = [
  "codex-core",
  "codex-utils-cli",
  "jni",
+ "openssl-sys",
  "tokio",
 ]
 

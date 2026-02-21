@@ -1,30 +1,33 @@
 package com.litter.android
 
 import android.os.Bundle
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import com.litter.android.core.bridge.CodexRpcClient
-import com.litter.android.core.network.ServerDiscoveryService
-import com.litter.android.feature.conversation.ConversationFeature
-import com.litter.android.feature.discovery.DiscoveryFeature
-import com.litter.android.feature.sessions.SessionsFeature
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import com.litter.android.state.ServerManager
+import com.litter.android.ui.LitterAppShell
+import com.litter.android.ui.LitterAppTheme
+import com.litter.android.ui.rememberLitterAppState
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
+    private lateinit var serverManager: ServerManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val rpc = CodexRpcClient()
-        val discovery = DiscoveryFeature(ServerDiscoveryService())
-        val sessions = SessionsFeature(rpc)
-        val conversation = ConversationFeature(rpc)
+        serverManager = ServerManager()
 
-        val status = buildString {
-            append("Litter Android modules initialized\n")
-            append("servers=${discovery.discoverServers().size}\n")
-            append("sessions=${sessions.loadSessions().size}\n")
-            append("turn='${conversation.sendPrompt("hello")}'")
+        setContent {
+            LitterAppTheme {
+                val appState = rememberLitterAppState(serverManager = serverManager)
+                LitterAppShell(appState = appState)
+            }
         }
+    }
 
-        setContentView(TextView(this).apply { text = status })
+    override fun onDestroy() {
+        if (::serverManager.isInitialized) {
+            serverManager.close()
+        }
+        super.onDestroy()
     }
 }
