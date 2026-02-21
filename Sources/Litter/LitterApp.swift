@@ -33,7 +33,9 @@ struct ContentView: View {
                 HeaderView()
                 Divider().background(Color(hex: "#1E1E1E"))
                 mainContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             SidebarOverlay()
         }
