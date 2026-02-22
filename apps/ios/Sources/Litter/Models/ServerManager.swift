@@ -10,6 +10,7 @@ final class ServerManager: ObservableObject {
     private let savedServersKey = "codex_saved_servers"
     private var threadSubscriptions: [ThreadKey: AnyCancellable] = [:]
     private var liveItemMessageIndices: [ThreadKey: [String: Int]] = [:]
+    private var liveTurnDiffMessageIndices: [ThreadKey: [String: Int]] = [:]
     private var serversUsingItemNotifications: Set<String> = []
 
     /// Call after inserting a new ThreadState into `threads` to forward its changes.
@@ -69,6 +70,7 @@ final class ServerManager: ObservableObject {
         for key in threads.keys where key.serverId == id {
             threadSubscriptions.removeValue(forKey: key)
             liveItemMessageIndices.removeValue(forKey: key)
+            liveTurnDiffMessageIndices.removeValue(forKey: key)
         }
         serversUsingItemNotifications.remove(id)
         threads = threads.filter { $0.key.serverId != id }
@@ -112,6 +114,7 @@ final class ServerManager: ObservableObject {
             state.updatedAt = Date()
             threads[key] = state
             liveItemMessageIndices[key] = nil
+            liveTurnDiffMessageIndices[key] = nil
             observeThread(state)
             activeThreadKey = key
             return key
@@ -136,6 +139,7 @@ final class ServerManager: ObservableObject {
             let resp = try await conn.resumeThread(threadId: threadId, cwd: cwd)
             state.messages = restoredMessages(from: resp.thread.turns)
             liveItemMessageIndices[key] = nil
+            liveTurnDiffMessageIndices[key] = nil
             state.cwd = cwd
             state.status = .ready
             state.updatedAt = Date()
@@ -254,18 +258,35 @@ final class ServerManager: ObservableObject {
                 threads[key]?.status = .ready
                 threads[key]?.updatedAt = Date()
                 liveItemMessageIndices[key] = nil
+                liveTurnDiffMessageIndices[key] = nil
+                if activeThreadKey == key {
+                    Task { @MainActor in
+                        await syncThreadFromServer(key)
+                    }
+                }
             } else {
                 // Fallback: mark any thinking thread on this server as ready
                 for (_, thread) in threads where thread.serverId == serverId && thread.hasTurnActive {
                     thread.status = .ready
                     thread.updatedAt = Date()
                     liveItemMessageIndices[thread.key] = nil
+                    liveTurnDiffMessageIndices[thread.key] = nil
+                }
+                if let key = activeThreadKey {
+                    Task { @MainActor in
+                        await syncThreadFromServer(key)
+                    }
                 }
             }
+
+        case "turn/diff/updated":
+            handleTurnDiffNotification(serverId: serverId, data: data)
 
         default:
             if method.hasPrefix("item/") {
                 handleItemNotification(serverId: serverId, method: method, data: data)
+            } else if method == "codex/event/turn_diff" {
+                handleLegacyCodexEventNotification(serverId: serverId, method: method, data: data)
             } else if (method == "codex/event" || method.hasPrefix("codex/event/")),
                       !serversUsingItemNotifications.contains(serverId) {
                 handleLegacyCodexEventNotification(serverId: serverId, method: method, data: data)
@@ -412,6 +433,40 @@ final class ServerManager: ObservableObject {
         return current + "\n\nProgress:\n" + progress
     }
 
+    private func handleTurnDiffNotification(serverId: String, data: Data) {
+        struct TurnDiffParams: Decodable {
+            let threadId: String?
+            let turnId: String?
+            let diff: String?
+        }
+        struct TurnDiffNotification: Decodable { let params: TurnDiffParams }
+        guard let notif = try? JSONDecoder().decode(TurnDiffNotification.self, from: data),
+              let diff = notif.params.diff?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !diff.isEmpty else { return }
+
+        let key = resolveThreadKey(serverId: serverId, threadId: notif.params.threadId)
+        guard let thread = threads[key],
+              let msg = systemMessage(title: "File Diff", body: "```diff\n\(diff)\n```") else { return }
+
+        if let turnId = notif.params.turnId, !turnId.isEmpty {
+            upsertLiveTurnDiffMessage(msg, turnId: turnId, key: key, thread: thread)
+        } else {
+            thread.messages.append(msg)
+        }
+        thread.updatedAt = Date()
+    }
+
+    private func upsertLiveTurnDiffMessage(_ message: ChatMessage, turnId: String, key: ThreadKey, thread: ThreadState) {
+        if let index = liveTurnDiffMessageIndices[key]?[turnId],
+           thread.messages.indices.contains(index) {
+            thread.messages[index] = message
+        } else {
+            let index = thread.messages.count
+            thread.messages.append(message)
+            liveTurnDiffMessageIndices[key, default: [:]][turnId] = index
+        }
+    }
+
     private func handleLegacyCodexEventNotification(serverId: String, method: String, data: Data) {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let params = root["params"] as? [String: Any] else { return }
@@ -430,8 +485,8 @@ final class ServerManager: ObservableObject {
 
         guard !eventType.isEmpty else { return }
 
-        let threadId = extractString(params, keys: ["threadId", "thread_id"])
-            ?? extractString(eventPayload, keys: ["threadId", "thread_id"])
+        let threadId = extractString(params, keys: ["threadId", "thread_id", "conversationId", "conversation_id"])
+            ?? extractString(eventPayload, keys: ["threadId", "thread_id", "conversationId", "conversation_id"])
         let key = resolveThreadKey(serverId: serverId, threadId: threadId)
         guard let thread = threads[key] else { return }
 
@@ -550,6 +605,66 @@ final class ServerManager: ObservableObject {
             }
             thread.updatedAt = Date()
 
+        case "patch_apply_begin":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let changeSummary = legacyPatchChangeBody(from: eventPayload["changes"])
+            let autoApproved = (eventPayload["auto_approved"] as? Bool) == true
+
+            var body = "Status: inProgress"
+            body += "\nApproval: \(autoApproved ? "auto" : "requested")"
+            if !changeSummary.isEmpty {
+                body += "\n\n" + changeSummary
+            }
+
+            guard let msg = systemMessage(title: "File Change", body: body) else { return }
+            if let itemId {
+                upsertLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "patch_apply_end":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let status = extractString(eventPayload, keys: ["status"]) ?? ((eventPayload["success"] as? Bool) == true ? "completed" : "failed")
+            let stdout = extractString(eventPayload, keys: ["stdout"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let stderr = extractString(eventPayload, keys: ["stderr"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let changeSummary = legacyPatchChangeBody(from: eventPayload["changes"])
+
+            var body = "Status: \(status)"
+            if !changeSummary.isEmpty {
+                body += "\n\n" + changeSummary
+            }
+            if !stdout.isEmpty {
+                body += "\n\nOutput:\n```text\n\(stdout)\n```"
+            }
+            if !stderr.isEmpty {
+                body += "\n\nError:\n```text\n\(stderr)\n```"
+            }
+
+            guard let msg = systemMessage(title: "File Change", body: body) else { return }
+            if let itemId {
+                completeLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "turn_diff":
+            let turnId = extractString(params, keys: ["id", "turnId", "turn_id"])
+                ?? extractString(eventPayload, keys: ["id", "turnId", "turn_id"])
+            guard let diff = extractString(eventPayload, keys: ["unified_diff"])?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !diff.isEmpty,
+                  let msg = systemMessage(title: "File Diff", body: "```diff\n\(diff)\n```") else { return }
+
+            if let turnId, !turnId.isEmpty {
+                upsertLiveTurnDiffMessage(msg, turnId: turnId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
         default:
             break
         }
@@ -583,17 +698,104 @@ final class ServerManager: ObservableObject {
         return nil
     }
 
+    private func legacyPatchChangeBody(from rawChanges: Any?) -> String {
+        guard let changes = rawChanges as? [String: Any], !changes.isEmpty else { return "" }
+        var sections: [String] = []
+        for path in changes.keys.sorted() {
+            guard let change = changes[path] as? [String: Any] else { continue }
+            let kind = extractString(change, keys: ["type"]) ?? "update"
+            var section = "Path: \(path)\nKind: \(kind)"
+            if kind == "update",
+               let diff = extractString(change, keys: ["unified_diff"]),
+               !diff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                section += "\n\n```diff\n\(diff)\n```"
+            } else if (kind == "add" || kind == "delete"),
+                      let content = extractString(change, keys: ["content"]),
+                      !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                section += "\n\n```text\n\(content)\n```"
+            }
+            sections.append(section)
+        }
+        return sections.joined(separator: "\n\n---\n\n")
+    }
+
     private func extractThreadId(from data: Data) -> String? {
         struct Wrapper: Decodable {
-            struct Params: Decodable { let threadId: String? }
+            struct Params: Decodable {
+                let threadId: String?
+                let conversationId: String?
+            }
             let params: Params?
         }
-        return (try? JSONDecoder().decode(Wrapper.self, from: data))?.params?.threadId
+        guard let params = (try? JSONDecoder().decode(Wrapper.self, from: data))?.params else { return nil }
+        return params.threadId ?? params.conversationId
+    }
+
+    func syncActiveThreadFromServer() async {
+        guard let key = activeThreadKey else { return }
+        await syncThreadFromServer(key)
+    }
+
+    private func syncThreadFromServer(_ key: ThreadKey) async {
+        guard let conn = connections[key.serverId], conn.isConnected,
+              let thread = threads[key] else { return }
+        if thread.hasTurnActive { return }
+
+        let cwd = thread.cwd.isEmpty ? "/tmp" : thread.cwd
+        guard let response = try? await conn.resumeThread(threadId: key.threadId, cwd: cwd) else { return }
+        let restored = restoredMessages(from: response.thread.turns)
+        guard !messagesEquivalent(thread.messages, restored) else { return }
+        if shouldPreferLocalMessages(current: thread.messages, restored: restored) { return }
+
+        thread.messages = restored
+        thread.updatedAt = Date()
+        liveItemMessageIndices[key] = nil
+        liveTurnDiffMessageIndices[key] = nil
+    }
+
+    private func shouldPreferLocalMessages(current: [ChatMessage], restored: [ChatMessage]) -> Bool {
+        let currentToolCount = current.filter(isToolSystemMessage).count
+        let restoredToolCount = restored.filter(isToolSystemMessage).count
+        return currentToolCount > restoredToolCount && restored.count <= current.count
+    }
+
+    private func isToolSystemMessage(_ message: ChatMessage) -> Bool {
+        guard message.role == .system else { return false }
+        guard let title = systemTitle(from: message.text)?.lowercased() else { return false }
+        return title.contains("command")
+            || title.contains("file")
+            || title.contains("mcp")
+            || title.contains("web")
+            || title.contains("collab")
+            || title.contains("image")
+    }
+
+    private func systemTitle(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("### ") else { return nil }
+        let firstLine = trimmed.prefix(while: { $0 != "\n" })
+        let title = firstLine.dropFirst(4).trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
+    }
+
+    private func messagesEquivalent(_ lhs: [ChatMessage], _ rhs: [ChatMessage]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for (left, right) in zip(lhs, rhs) {
+            guard left.role == right.role, left.text == right.text else { return false }
+            guard left.images.count == right.images.count else { return false }
+            for (leftImage, rightImage) in zip(left.images, right.images) {
+                guard leftImage.data == rightImage.data else { return false }
+            }
+        }
+        return true
     }
 
     private func resolveThreadKey(serverId: String, threadId: String?) -> ThreadKey {
         if let threadId {
             return ThreadKey(serverId: serverId, threadId: threadId)
+        }
+        if let active = activeThreadKey, active.serverId == serverId {
+            return active
         }
         return threads.values
             .first { $0.serverId == serverId && $0.hasTurnActive }?

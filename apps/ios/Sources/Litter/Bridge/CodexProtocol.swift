@@ -520,13 +520,26 @@ struct ResumedFileUpdateChange: Decodable {
         case path
         case kind
         case diff
+        case unifiedDiff = "unified_diff"
+    }
+
+    private struct FileChangeKindObject: Decodable {
+        let type: String?
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         path = (try? container.decodeIfPresent(String.self, forKey: .path)) ?? "unknown"
-        kind = (try? container.decodeIfPresent(String.self, forKey: .kind)) ?? "update"
-        diff = (try? container.decodeIfPresent(String.self, forKey: .diff)) ?? ""
+        if let kindString = try? container.decode(String.self, forKey: .kind) {
+            kind = kindString
+        } else if let kindObject = try? container.decode(FileChangeKindObject.self, forKey: .kind) {
+            kind = kindObject.type ?? "update"
+        } else {
+            kind = "update"
+        }
+        diff = (try? container.decodeIfPresent(String.self, forKey: .diff))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .unifiedDiff))
+            ?? ""
     }
 }
 
