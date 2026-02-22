@@ -46,8 +46,24 @@ struct ConversationView: View {
                 }
                 .padding(16)
             }
+            .onAppear {
+                scrollToBottom(proxy, animated: false)
+            }
+            .onChange(of: serverManager.activeThreadKey) {
+                scrollToBottom(proxy, animated: false)
+            }
             .onChange(of: messages.count) {
-                withAnimation { proxy.scrollTo("bottom") }
+                scrollToBottom(proxy)
+            }
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+            } else {
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }
