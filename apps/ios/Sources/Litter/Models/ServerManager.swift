@@ -9,6 +9,8 @@ final class ServerManager: ObservableObject {
 
     private let savedServersKey = "codex_saved_servers"
     private var threadSubscriptions: [ThreadKey: AnyCancellable] = [:]
+    private var liveItemMessageIndices: [ThreadKey: [String: Int]] = [:]
+    private var serversUsingItemNotifications: Set<String> = []
 
     /// Call after inserting a new ThreadState into `threads` to forward its changes.
     private func observeThread(_ thread: ThreadState) {
@@ -66,7 +68,9 @@ final class ServerManager: ObservableObject {
         connections.removeValue(forKey: id)
         for key in threads.keys where key.serverId == id {
             threadSubscriptions.removeValue(forKey: key)
+            liveItemMessageIndices.removeValue(forKey: key)
         }
+        serversUsingItemNotifications.remove(id)
         threads = threads.filter { $0.key.serverId != id }
         if activeThreadKey?.serverId == id {
             activeThreadKey = nil
@@ -107,6 +111,7 @@ final class ServerManager: ObservableObject {
             state.cwd = cwd
             state.updatedAt = Date()
             threads[key] = state
+            liveItemMessageIndices[key] = nil
             observeThread(state)
             activeThreadKey = key
             return key
@@ -130,6 +135,7 @@ final class ServerManager: ObservableObject {
         do {
             let resp = try await conn.resumeThread(threadId: threadId, cwd: cwd)
             state.messages = restoredMessages(from: resp.thread.turns)
+            liveItemMessageIndices[key] = nil
             state.cwd = cwd
             state.status = .ready
             state.updatedAt = Date()
@@ -247,45 +253,334 @@ final class ServerManager: ObservableObject {
                 let key = ThreadKey(serverId: serverId, threadId: threadId)
                 threads[key]?.status = .ready
                 threads[key]?.updatedAt = Date()
+                liveItemMessageIndices[key] = nil
             } else {
                 // Fallback: mark any thinking thread on this server as ready
                 for (_, thread) in threads where thread.serverId == serverId && thread.hasTurnActive {
                     thread.status = .ready
                     thread.updatedAt = Date()
+                    liveItemMessageIndices[thread.key] = nil
                 }
             }
 
         default:
             if method.hasPrefix("item/") {
                 handleItemNotification(serverId: serverId, method: method, data: data)
+            } else if (method == "codex/event" || method.hasPrefix("codex/event/")),
+                      !serversUsingItemNotifications.contains(serverId) {
+                handleLegacyCodexEventNotification(serverId: serverId, method: method, data: data)
             }
         }
     }
 
     private func handleItemNotification(serverId: String, method: String, data: Data) {
         // Format: item/started or item/completed → params.item has the ThreadItem with "type"
-        //         item/agentMessage/delta etc. → streaming deltas, skip (agentMessage/delta handled above)
+        //         item/agentMessage/delta handled separately in handleNotification.
+        serversUsingItemNotifications.insert(serverId)
         struct ItemNotification: Decodable { let params: AnyCodable? }
         guard let raw = try? JSONDecoder().decode(ItemNotification.self, from: data),
               let paramsDict = raw.params?.value as? [String: Any] else { return }
 
-        let threadId = paramsDict["threadId"] as? String
-
-        // Only show completed items — started has incomplete data and would duplicate
-        guard method == "item/completed" else { return }
-        guard let itemDict = paramsDict["item"] as? [String: Any] else { return }
-
-        // agentMessage is streamed via delta; userMessage is added locally in send()
-        if let itemType = itemDict["type"] as? String,
-           itemType == "agentMessage" || itemType == "userMessage" { return }
-
-        guard let itemData = try? JSONSerialization.data(withJSONObject: itemDict),
-              let item = try? JSONDecoder().decode(ResumedThreadItem.self, from: itemData),
-              let msg = chatMessage(from: item) else { return }
+        let threadId = extractString(paramsDict, keys: ["threadId", "thread_id"])
         let key = resolveThreadKey(serverId: serverId, threadId: threadId)
         guard let thread = threads[key] else { return }
-        thread.messages.append(msg)
-        thread.updatedAt = Date()
+
+        switch method {
+        case "item/started", "item/completed":
+            guard let itemDict = paramsDict["item"] as? [String: Any] else { return }
+            // agentMessage is streamed via delta; userMessage is added locally in send()
+            if let itemType = itemDict["type"] as? String,
+               itemType == "agentMessage" || itemType == "userMessage" {
+                return
+            }
+            guard let itemData = try? JSONSerialization.data(withJSONObject: itemDict),
+                  let item = try? JSONDecoder().decode(ResumedThreadItem.self, from: itemData),
+                  let msg = chatMessage(from: item) else { return }
+            let itemId = extractString(itemDict, keys: ["id"])
+            if method == "item/started", let itemId {
+                upsertLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else if method == "item/completed", let itemId {
+                completeLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "item/commandExecution/outputDelta":
+            guard let delta = extractString(paramsDict, keys: ["delta"]), !delta.isEmpty else { return }
+            if let itemId = extractString(paramsDict, keys: ["itemId", "item_id"]),
+               appendCommandOutputDelta(delta, itemId: itemId, key: key, thread: thread) {
+                thread.updatedAt = Date()
+                return
+            }
+            if let msg = systemMessage(title: "Command Output", body: "```text\n\(delta)\n```") {
+                thread.messages.append(msg)
+                thread.updatedAt = Date()
+            }
+
+        case "item/mcpToolCall/progress":
+            guard let progress = extractString(paramsDict, keys: ["message"]), !progress.isEmpty else { return }
+            if let itemId = extractString(paramsDict, keys: ["itemId", "item_id"]),
+               appendMcpProgress(progress, itemId: itemId, key: key, thread: thread) {
+                thread.updatedAt = Date()
+                return
+            }
+            if let msg = systemMessage(title: "MCP Tool Progress", body: progress) {
+                thread.messages.append(msg)
+                thread.updatedAt = Date()
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func extractString(_ dict: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let value = dict[key] as? String {
+                return value
+            }
+            if let value = dict[key] as? NSNumber {
+                return value.stringValue
+            }
+        }
+        return nil
+    }
+
+    private func upsertLiveItemMessage(_ message: ChatMessage, itemId: String, key: ThreadKey, thread: ThreadState) {
+        if let index = liveItemMessageIndices[key]?[itemId],
+           thread.messages.indices.contains(index) {
+            thread.messages[index] = message
+        } else {
+            let index = thread.messages.count
+            thread.messages.append(message)
+            liveItemMessageIndices[key, default: [:]][itemId] = index
+        }
+    }
+
+    private func completeLiveItemMessage(_ message: ChatMessage, itemId: String, key: ThreadKey, thread: ThreadState) {
+        if let index = liveItemMessageIndices[key]?[itemId],
+           thread.messages.indices.contains(index) {
+            thread.messages[index] = message
+        } else {
+            thread.messages.append(message)
+        }
+        liveItemMessageIndices[key]?[itemId] = nil
+    }
+
+    private func appendCommandOutputDelta(_ delta: String, itemId: String, key: ThreadKey, thread: ThreadState) -> Bool {
+        guard let index = liveItemMessageIndices[key]?[itemId],
+              thread.messages.indices.contains(index) else {
+            return false
+        }
+        thread.messages[index].text = mergeCommandOutput(thread.messages[index].text, delta: delta)
+        return true
+    }
+
+    private func appendMcpProgress(_ progress: String, itemId: String, key: ThreadKey, thread: ThreadState) -> Bool {
+        guard let index = liveItemMessageIndices[key]?[itemId],
+              thread.messages.indices.contains(index) else {
+            return false
+        }
+        thread.messages[index].text = mergeProgress(thread.messages[index].text, progress: progress)
+        return true
+    }
+
+    private func mergeCommandOutput(_ current: String, delta: String) -> String {
+        let outputPrefix = "\n\nOutput:\n```text\n"
+        let closingFence = "\n```"
+
+        if let outputRange = current.range(of: outputPrefix),
+           let closeRange = current.range(of: closingFence, options: .backwards),
+           closeRange.lowerBound >= outputRange.upperBound {
+            var updated = current
+            updated.insert(contentsOf: delta, at: closeRange.lowerBound)
+            return updated
+        }
+
+        var chunk = delta
+        if !chunk.hasSuffix("\n") {
+            chunk += "\n"
+        }
+        return current + outputPrefix + chunk + "```"
+    }
+
+    private func mergeProgress(_ current: String, progress: String) -> String {
+        if current.contains("\n\nProgress:\n") {
+            return current + "\n" + progress
+        }
+        return current + "\n\nProgress:\n" + progress
+    }
+
+    private func handleLegacyCodexEventNotification(serverId: String, method: String, data: Data) {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let params = root["params"] as? [String: Any] else { return }
+
+        let eventPayload: [String: Any]
+        let eventType: String
+
+        if method == "codex/event" {
+            guard let msg = params["msg"] as? [String: Any] else { return }
+            eventPayload = msg
+            eventType = extractString(msg, keys: ["type"]) ?? ""
+        } else {
+            eventPayload = (params["msg"] as? [String: Any]) ?? params
+            eventType = String(method.dropFirst("codex/event/".count))
+        }
+
+        guard !eventType.isEmpty else { return }
+
+        let threadId = extractString(params, keys: ["threadId", "thread_id"])
+            ?? extractString(eventPayload, keys: ["threadId", "thread_id"])
+        let key = resolveThreadKey(serverId: serverId, threadId: threadId)
+        guard let thread = threads[key] else { return }
+
+        switch eventType {
+        case "exec_command_begin":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let command = extractCommandText(eventPayload)
+            let cwd = extractString(eventPayload, keys: ["cwd"]) ?? ""
+
+            var lines: [String] = ["Status: inProgress"]
+            if !cwd.isEmpty { lines.append("Directory: \(cwd)") }
+            var body = lines.joined(separator: "\n")
+            if !command.isEmpty { body += "\n\nCommand:\n```bash\n\(command)\n```" }
+
+            guard let msg = systemMessage(title: "Command Execution", body: body) else { return }
+            if let itemId {
+                upsertLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "exec_command_output_delta":
+            guard let delta = extractString(eventPayload, keys: ["chunk"]), !delta.isEmpty else { return }
+            if let itemId = extractString(eventPayload, keys: ["call_id", "callId"]),
+               appendCommandOutputDelta(delta, itemId: itemId, key: key, thread: thread) {
+                thread.updatedAt = Date()
+                return
+            }
+            if let msg = systemMessage(title: "Command Output", body: "```text\n\(delta)\n```") {
+                thread.messages.append(msg)
+                thread.updatedAt = Date()
+            }
+
+        case "exec_command_end":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let command = extractCommandText(eventPayload)
+            let cwd = extractString(eventPayload, keys: ["cwd"]) ?? ""
+            let status = extractString(eventPayload, keys: ["status"]) ?? "completed"
+            let exitCode = extractString(eventPayload, keys: ["exit_code", "exitCode"])
+            let durationMs = durationMillis(from: eventPayload["duration"])
+
+            var lines: [String] = ["Status: \(status)"]
+            if !cwd.isEmpty { lines.append("Directory: \(cwd)") }
+            if let exitCode, !exitCode.isEmpty { lines.append("Exit code: \(exitCode)") }
+            if let durationMs { lines.append("Duration: \(durationMs) ms") }
+
+            var body = lines.joined(separator: "\n")
+            if !command.isEmpty { body += "\n\nCommand:\n```bash\n\(command)\n```" }
+
+            let output = extractCommandOutput(eventPayload)
+            if !output.isEmpty {
+                body += "\n\nOutput:\n```text\n\(output)\n```"
+            }
+
+            guard let msg = systemMessage(title: "Command Execution", body: body) else { return }
+            if let itemId {
+                completeLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "mcp_tool_call_begin":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let invocation = eventPayload["invocation"] as? [String: Any]
+            let server = invocation.flatMap { extractString($0, keys: ["server"]) } ?? ""
+            let tool = invocation.flatMap { extractString($0, keys: ["tool"]) } ?? ""
+
+            var lines: [String] = ["Status: inProgress"]
+            if !server.isEmpty || !tool.isEmpty {
+                lines.append("Tool: \(server.isEmpty ? tool : "\(server)/\(tool)")")
+            }
+            var body = lines.joined(separator: "\n")
+            if let args = invocation?["arguments"], let pretty = prettyJSON(args) {
+                body += "\n\nArguments:\n```json\n\(pretty)\n```"
+            }
+
+            guard let msg = systemMessage(title: "MCP Tool Call", body: body) else { return }
+            if let itemId {
+                upsertLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        case "mcp_tool_call_end":
+            let itemId = extractString(eventPayload, keys: ["call_id", "callId"])
+            let invocation = eventPayload["invocation"] as? [String: Any]
+            let server = invocation.flatMap { extractString($0, keys: ["server"]) } ?? ""
+            let tool = invocation.flatMap { extractString($0, keys: ["tool"]) } ?? ""
+            let durationMs = durationMillis(from: eventPayload["duration"])
+            let result = eventPayload["result"]
+
+            var status = "completed"
+            if let resultDict = result as? [String: Any], resultDict["Err"] != nil {
+                status = "failed"
+            }
+
+            var lines: [String] = ["Status: \(status)"]
+            if !server.isEmpty || !tool.isEmpty {
+                lines.append("Tool: \(server.isEmpty ? tool : "\(server)/\(tool)")")
+            }
+            if let durationMs { lines.append("Duration: \(durationMs) ms") }
+            var body = lines.joined(separator: "\n")
+
+            if let result, let pretty = prettyJSON(result) {
+                body += "\n\nResult:\n```json\n\(pretty)\n```"
+            }
+
+            guard let msg = systemMessage(title: "MCP Tool Call", body: body) else { return }
+            if let itemId {
+                completeLiveItemMessage(msg, itemId: itemId, key: key, thread: thread)
+            } else {
+                thread.messages.append(msg)
+            }
+            thread.updatedAt = Date()
+
+        default:
+            break
+        }
+    }
+
+    private func extractCommandText(_ eventPayload: [String: Any]) -> String {
+        if let parts = eventPayload["command"] as? [String], !parts.isEmpty {
+            return parts.joined(separator: " ")
+        }
+        return extractString(eventPayload, keys: ["command"]) ?? ""
+    }
+
+    private func extractCommandOutput(_ eventPayload: [String: Any]) -> String {
+        let candidateKeys = ["aggregated_output", "formatted_output", "stdout", "stderr"]
+        let chunks = candidateKeys.compactMap { extractString(eventPayload, keys: [$0]) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return chunks.joined(separator: "\n")
+    }
+
+    private func durationMillis(from rawDuration: Any?) -> Int? {
+        if let value = rawDuration as? NSNumber {
+            return value.intValue
+        }
+        if let dict = rawDuration as? [String: Any],
+           let secsValue = dict["secs"] as? NSNumber {
+            let nanosValue = (dict["nanos"] as? NSNumber)?.int64Value ?? 0
+            let millis = secsValue.int64Value * 1_000 + nanosValue / 1_000_000
+            return Int(millis)
+        }
+        return nil
     }
 
     private func extractThreadId(from data: Data) -> String? {
