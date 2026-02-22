@@ -11,7 +11,7 @@
 - `apps/android/docs/qa-matrix.md` tracks Android parity QA coverage.
 - `shared/rust-bridge/codex-bridge/` is the shared Rust library (`libcodex_bridge.a`) exposed through `shared/rust-bridge/codex-bridge/include/codex_bridge.h`.
 - `shared/third_party/codex/` is the upstream Codex submodule.
-- `apps/ios/Frameworks/` stores iOS XCFrameworks (`codex_bridge.xcframework` and `ios_system/*`).
+- `apps/ios/Frameworks/` contains generated/downloaded iOS XCFrameworks (`codex_bridge.xcframework` and `ios_system/*`); these artifacts are not committed.
 - `apps/ios/project.yml` is the source of truth for project generation; regenerate `apps/ios/Litter.xcodeproj` instead of hand-editing project files.
 
 ## Architecture

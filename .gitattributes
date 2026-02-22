@@ -1,1 +1,0 @@
-Frameworks/codex_bridge.xcframework/**/libcodex_bridge.a filter=lfs diff=lfs merge=lfs -text

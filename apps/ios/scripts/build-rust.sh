@@ -18,13 +18,13 @@ echo "==> Installing iOS targets..."
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
 echo "==> Building for aarch64-apple-ios (device)..."
-cargo build --release --target aarch64-apple-ios
+cargo rustc --release --target aarch64-apple-ios --crate-type staticlib
 
 echo "==> Building for aarch64-apple-ios-sim (Apple Silicon simulator)..."
-cargo build --release --target aarch64-apple-ios-sim
+cargo rustc --release --target aarch64-apple-ios-sim --crate-type staticlib
 
 echo "==> Building for x86_64-apple-ios (Intel simulator)..."
-cargo build --release --target x86_64-apple-ios
+cargo rustc --release --target x86_64-apple-ios --crate-type staticlib
 
 echo "==> Creating fat simulator lib..."
 mkdir -p target/ios-sim-fat/release

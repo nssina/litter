@@ -24,6 +24,14 @@ iOS supports:
 - `LitterRemote`: remote-only mode (default scheme; no bundled on-device Rust server)
 - `Litter`: includes the on-device Rust bridge (`codex_bridge.xcframework`)
 
+Generated iOS framework artifacts under `apps/ios/Frameworks/` are not stored in git.
+Bootstrap them locally before building:
+
+```bash
+./apps/ios/scripts/download-ios-system.sh
+./apps/ios/scripts/build-rust.sh
+```
+
 ## Prerequisites
 
 - Xcode.app (full install, not only CLT)
