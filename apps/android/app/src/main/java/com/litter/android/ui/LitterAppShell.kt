@@ -160,7 +160,7 @@ fun LitterAppShell(appState: LitterAppState) {
 
     Box(modifier = Modifier.fillMaxSize().background(LitterTheme.backgroundBrush)) {
         Column(
-            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         ) {
             HeaderBar(
                 models = uiState.models,
