@@ -52,6 +52,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
@@ -67,6 +68,8 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -894,6 +897,7 @@ private fun ConversationPanel(
         }
 
         InputBar(
+            modifier = Modifier.imePadding(),
             draft = draft,
             attachedImagePath = attachedImagePath,
             attachmentError = attachmentError,
@@ -1228,6 +1232,7 @@ private fun SystemMessageCard(message: ChatMessage) {
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun InputBar(
+    modifier: Modifier = Modifier,
     draft: String,
     attachedImagePath: String?,
     attachmentError: String?,
@@ -1289,6 +1294,7 @@ private fun InputBar(
     var experimentalFeaturesLoading by remember { mutableStateOf(false) }
     var skills by remember { mutableStateOf<List<SkillMetadata>>(emptyList()) }
     var skillsLoading by remember { mutableStateOf(false) }
+    var showAttachmentMenu by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -1836,41 +1842,42 @@ private fun InputBar(
         )
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = LitterTheme.surface,
+    Column(
+        modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 16.dp, top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
             if (attachedImagePath != null) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = LitterTheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    color = LitterTheme.surfaceLight,
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                    modifier = Modifier.padding(bottom = 2.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Image,
                             contentDescription = null,
-                            tint = LitterTheme.textSecondary,
-                            modifier = Modifier.size(14.dp),
+                            tint = LitterTheme.accent,
+                            modifier = Modifier.size(16.dp),
                         )
                         Text(
                             text = attachedImagePath.substringAfterLast('/'),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = LitterTheme.textSecondary,
+                            color = LitterTheme.textPrimary,
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(onClick = onClearAttachment, enabled = !isSending) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp))
+                        IconButton(
+                            onClick = onClearAttachment, 
+                            enabled = !isSending,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp), tint = LitterTheme.textSecondary)
                         }
                     }
                 }
@@ -1881,14 +1888,15 @@ private fun InputBar(
                     text = attachmentError,
                     color = LitterTheme.danger,
                     style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
 
             if (showSlashPopup) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = LitterTheme.surface.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = LitterTheme.surfaceLight.copy(alpha = 0.98f),
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                 ) {
                     Column {
@@ -1898,8 +1906,8 @@ private fun InputBar(
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable { applySlashSuggestion(command) }
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
@@ -1917,7 +1925,7 @@ private fun InputBar(
                                 )
                             }
                             if (index < slashSuggestions.lastIndex) {
-                                HorizontalDivider(color = LitterTheme.border)
+                                HorizontalDivider(color = LitterTheme.border, thickness = 0.5.dp)
                             }
                         }
                     }
@@ -1927,8 +1935,8 @@ private fun InputBar(
             if (showFilePopup) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = LitterTheme.surface.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = LitterTheme.surfaceLight.copy(alpha = 0.98f),
                     border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
                 ) {
                     when {
@@ -1937,7 +1945,7 @@ private fun InputBar(
                                 text = "Searching files...",
                                 color = LitterTheme.textSecondary,
                                 style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                             )
                         }
 
@@ -1946,7 +1954,7 @@ private fun InputBar(
                                 text = fileSearchError.orEmpty(),
                                 color = LitterTheme.danger,
                                 style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                             )
                         }
 
@@ -1955,7 +1963,7 @@ private fun InputBar(
                                 text = "No matches",
                                 color = LitterTheme.textSecondary,
                                 style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                             )
                         }
 
@@ -1968,15 +1976,15 @@ private fun InputBar(
                                             Modifier
                                                 .fillMaxWidth()
                                                 .clickable { applyFileSuggestion(suggestion) }
-                                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Folder,
                                             contentDescription = null,
                                             tint = LitterTheme.textSecondary,
-                                            modifier = Modifier.size(14.dp),
+                                            modifier = Modifier.size(16.dp),
                                         )
                                         Text(
                                             text = suggestion.path,
@@ -1988,7 +1996,7 @@ private fun InputBar(
                                         )
                                     }
                                     if (index < visibleSuggestions.lastIndex) {
-                                        HorizontalDivider(color = LitterTheme.border)
+                                        HorizontalDivider(color = LitterTheme.border, thickness = 0.5.dp)
                                     }
                                 }
                             }
@@ -1997,56 +2005,139 @@ private fun InputBar(
                 }
             }
 
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            color = LitterTheme.surfaceLight,
+            border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+        ) {
+            val actionButtonSize = 36.dp
+            val actionIconSize = 18.dp
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(onClick = onAttachImage, enabled = !isSending) {
-                    Icon(Icons.Default.AttachFile, contentDescription = "Attach image", modifier = Modifier.size(16.dp))
-                }
-                OutlinedButton(onClick = onCaptureImage, enabled = !isSending) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = "Capture image", modifier = Modifier.size(16.dp))
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(actionButtonSize)
+                            .clip(CircleShape)
+                            .background(LitterTheme.surface)
+                            .clickable(enabled = !isSending) { showAttachmentMenu = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Attachments",
+                            modifier = Modifier.size(actionIconSize),
+                            tint = LitterTheme.textPrimary
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showAttachmentMenu,
+                        onDismissRequest = { showAttachmentMenu = false },
+                        containerColor = LitterTheme.surfaceLight,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Upload File", color = LitterTheme.textPrimary, style = MaterialTheme.typography.bodyMedium) },
+                            onClick = {
+                                showAttachmentMenu = false
+                                onAttachImage()
+                            },
+                            leadingIcon = { Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp), tint = LitterTheme.textSecondary) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Camera", color = LitterTheme.textPrimary, style = MaterialTheme.typography.bodyMedium) },
+                            onClick = {
+                                showAttachmentMenu = false
+                                onCaptureImage()
+                            },
+                            leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp), tint = LitterTheme.textSecondary) }
+                        )
+                    }
                 }
 
-                OutlinedTextField(
-                    value = composerValue,
-                    onValueChange = { nextValue ->
-                        composerValue = nextValue
-                        onDraftChange(nextValue.text)
-                        refreshComposerPopups(nextValue)
-                    },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message litter...") },
-                    minLines = 1,
-                    maxLines = 5,
-                )
+                Spacer(modifier = Modifier.width(4.dp))
 
-                Button(
-                    onClick = {
-                        val trimmed = composerValue.text.trim()
-                        if (attachedImagePath == null) {
-                            val invocation = parseSlashCommandInvocation(trimmed)
-                            if (invocation != null) {
-                                composerValue = TextFieldValue(text = "", selection = TextRange(0))
-                                onDraftChange("")
-                                hideComposerPopups()
-                                executeSlashCommand(invocation.command, invocation.args)
-                                return@Button
-                            }
-                        }
-                        onSend(composerValue.text)
-                        hideComposerPopups()
-                    },
-                    enabled = (composerValue.text.isNotBlank() || attachedImagePath != null) && !isSending,
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", modifier = Modifier.size(16.dp))
+                    if (composerValue.text.isEmpty()) {
+                        Text(
+                            text = "Message litter...",
+                            color = LitterTheme.textMuted,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    BasicTextField(
+                        value = composerValue,
+                        onValueChange = { nextValue ->
+                            composerValue = nextValue
+                            onDraftChange(nextValue.text)
+                            refreshComposerPopups(nextValue)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = LitterTheme.textPrimary),
+                        cursorBrush = SolidColor(LitterTheme.accent),
+                        maxLines = 5,
+                    )
                 }
 
-                OutlinedButton(onClick = onInterrupt, enabled = isSending) {
-                    Icon(Icons.Default.Stop, contentDescription = "Interrupt", modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+
+                if (isSending) {
+                    Box(
+                        modifier = Modifier
+                            .size(actionButtonSize)
+                            .clip(CircleShape)
+                            .background(LitterTheme.surface)
+                            .clickable { onInterrupt() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Stop,
+                            contentDescription = "Interrupt",
+                            modifier = Modifier.size(actionIconSize),
+                            tint = LitterTheme.danger
+                        )
+                    }
+                } else {
+                    val canSend = (composerValue.text.isNotBlank() || attachedImagePath != null)
+                    Box(
+                        modifier = Modifier
+                            .size(actionButtonSize)
+                            .clip(CircleShape)
+                            .background(if (canSend) LitterTheme.accent else Color.Transparent)
+                            .clickable(enabled = canSend) {
+                                val trimmed = composerValue.text.trim()
+                                if (attachedImagePath == null) {
+                                    val invocation = parseSlashCommandInvocation(trimmed)
+                                    if (invocation != null) {
+                                        composerValue = TextFieldValue(text = "", selection = TextRange(0))
+                                        onDraftChange("")
+                                        hideComposerPopups()
+                                        executeSlashCommand(invocation.command, invocation.args)
+                                        return@clickable
+                                    }
+                                }
+                                onSend(composerValue.text)
+                                hideComposerPopups()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            modifier = Modifier.size(actionIconSize),
+                            tint = if (canSend) LitterTheme.surface else LitterTheme.textMuted
+                        )
+                    }
                 }
-            }
+        }
         }
     }
 }
