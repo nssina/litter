@@ -148,6 +148,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.util.LinkedHashMap
 import java.util.Locale
 
 @Composable
@@ -566,6 +567,7 @@ private fun SessionSidebar(
         } else {
             sessions.filter { matchesSessionSearch(it, normalizedQuery) }
         }
+    val groupedSessions = remember(filteredSessions) { groupSessionsByFolder(filteredSessions) }
 
     Surface(
         modifier = modifier,
@@ -639,66 +641,72 @@ private fun SessionSidebar(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(items = filteredSessions, key = { "${it.key.serverId}:${it.key.threadId}" }) { thread ->
-                            val isActive = thread.key == activeThreadKey
-                            Surface(
-                                modifier = Modifier.fillMaxWidth().clickable { onSessionSelected(thread.key) },
-                                color =
-                                    if (isActive) {
-                                        LitterTheme.surfaceLight.copy(alpha = 0.58f)
-                                    } else {
-                                        LitterTheme.surface.copy(alpha = 0.58f)
-                                    },
-                                shape = RoundedCornerShape(8.dp),
-                                border =
-                                    androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isActive) LitterTheme.accent else LitterTheme.border,
-                                    ),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.Top,
+                        groupedSessions.forEach { group ->
+                            item(key = "folder-${group.folderPath}") {
+                                FolderGroupHeader(folderPath = group.folderPath)
+                            }
+
+                            items(items = group.threads, key = { "${it.key.serverId}:${it.key.threadId}" }) { thread ->
+                                val isActive = thread.key == activeThreadKey
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { onSessionSelected(thread.key) },
+                                    color =
+                                        if (isActive) {
+                                            LitterTheme.surfaceLight.copy(alpha = 0.58f)
+                                        } else {
+                                            LitterTheme.surface.copy(alpha = 0.58f)
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    border =
+                                        androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isActive) LitterTheme.accent else LitterTheme.border,
+                                        ),
                                 ) {
-                                    if (thread.hasTurnActive) {
-                                        ActiveTurnPulseDot(modifier = Modifier.padding(top = 3.dp))
-                                    } else {
-                                        Spacer(modifier = Modifier.size(8.dp))
-                                    }
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.Top,
                                     ) {
-                                        Text(
-                                            text = thread.preview.ifBlank { "Untitled session" },
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = LitterTheme.textPrimary,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
+                                        if (thread.hasTurnActive) {
+                                            ActiveTurnPulseDot(modifier = Modifier.padding(top = 3.dp))
+                                        } else {
+                                            Spacer(modifier = Modifier.size(8.dp))
+                                        }
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
                                         ) {
                                             Text(
-                                                text = relativeDate(thread.updatedAtEpochMillis),
-                                                maxLines = 1,
+                                                text = thread.preview.ifBlank { "Untitled session" },
+                                                maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
-                                                color = LitterTheme.textSecondary,
-                                                style = MaterialTheme.typography.labelLarge,
+                                                color = LitterTheme.textPrimary,
+                                                style = MaterialTheme.typography.bodyMedium,
                                             )
-                                            ServerSourceBadge(
-                                                source = thread.serverSource,
-                                                serverName = thread.serverName,
-                                            )
-                                            Text(
-                                                text = cwdLeaf(thread.cwd),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = LitterTheme.textMuted,
-                                                style = MaterialTheme.typography.labelLarge,
-                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    text = relativeDate(thread.updatedAtEpochMillis),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = LitterTheme.textSecondary,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                )
+                                                ServerSourceBadge(
+                                                    source = thread.serverSource,
+                                                    serverName = thread.serverName,
+                                                )
+                                                Text(
+                                                    text = cwdLeaf(thread.cwd),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = LitterTheme.textMuted,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -734,6 +742,40 @@ private fun SessionSidebar(
     }
 }
 
+@Composable
+private fun FolderGroupHeader(folderPath: String) {
+    val folderName = cwdLeaf(folderPath)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = LitterTheme.textSecondary,
+        )
+        Text(
+            text = folderName,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = LitterTheme.textSecondary,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (folderName != folderPath) {
+            Text(
+                text = folderPath,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = LitterTheme.textMuted,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
 private fun matchesSessionSearch(
     thread: ThreadState,
     query: String,
@@ -742,6 +784,22 @@ private fun matchesSessionSearch(
     return thread.preview.lowercase(Locale.ROOT).contains(normalizedQuery) ||
         thread.cwd.lowercase(Locale.ROOT).contains(normalizedQuery) ||
         thread.serverName.lowercase(Locale.ROOT).contains(normalizedQuery)
+}
+
+private data class FolderSessionGroup(
+    val folderPath: String,
+    val threads: List<ThreadState>,
+)
+
+private fun groupSessionsByFolder(threads: List<ThreadState>): List<FolderSessionGroup> {
+    val grouped = LinkedHashMap<String, MutableList<ThreadState>>()
+    threads.forEach { thread ->
+        val folderPath = normalizeFolderPath(thread.cwd)
+        grouped.getOrPut(folderPath) { mutableListOf() }.add(thread)
+    }
+    return grouped.map { (folderPath, groupThreads) ->
+        FolderSessionGroup(folderPath = folderPath, threads = groupThreads)
+    }
 }
 
 @Composable
@@ -3797,11 +3855,24 @@ private fun serverSourceAccentColor(source: ServerSource): Color =
     }
 
 private fun cwdLeaf(path: String): String {
-    val trimmed = path.trim().trimEnd('/')
-    if (trimmed.isEmpty() || trimmed == "/") {
+    val trimmed = normalizeFolderPath(path)
+    if (trimmed == "/") {
         return "/"
     }
     return trimmed.substringAfterLast('/')
+}
+
+private fun normalizeFolderPath(path: String): String {
+    val trimmed = path.trim()
+    if (trimmed.isEmpty()) {
+        return "/"
+    }
+
+    var normalized = trimmed.replace(Regex("/+"), "/")
+    while (normalized.length > 1 && normalized.endsWith("/")) {
+        normalized = normalized.dropLast(1)
+    }
+    return if (normalized.isEmpty()) "/" else normalized
 }
 
 private fun discoverySourceLabel(source: DiscoverySource): String =
