@@ -118,13 +118,13 @@ Prerequisites:
 Build Android flavors:
 
 ```bash
-./apps/android/gradlew -p apps/android :app:assembleOnDeviceDebug :app:assembleRemoteOnlyDebug
+gradle -p apps/android :app:assembleOnDeviceDebug :app:assembleRemoteOnlyDebug
 ```
 
 Run Android unit tests:
 
 ```bash
-./apps/android/gradlew -p apps/android :app:testOnDeviceDebugUnitTest :app:testRemoteOnlyDebugUnitTest
+gradle -p apps/android :app:testOnDeviceDebugUnitTest :app:testRemoteOnlyDebugUnitTest
 ```
 
 Start emulator and install on-device debug build:
