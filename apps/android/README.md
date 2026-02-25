@@ -30,8 +30,6 @@ Examples:
 ```bash
 ./gradlew :app:assembleOnDeviceDebug
 ./gradlew :app:assembleRemoteOnlyDebug
-./gradlew :app:bundleOnDeviceRelease
-./gradlew :app:bundleRemoteOnlyRelease
 ```
 
 QA matrix and regression command list: `apps/android/docs/qa-matrix.md`.
@@ -47,5 +45,6 @@ Build and copy JNI artifacts into `core:bridge`:
 ```
 
 Prerequisites:
+
 - Android NDK (`ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT` set)
 - `cargo-ndk` (`cargo install cargo-ndk`)
