@@ -30,6 +30,8 @@ Examples:
 ```bash
 ./gradlew :app:assembleOnDeviceDebug
 ./gradlew :app:assembleRemoteOnlyDebug
+./gradlew :app:bundleOnDeviceRelease
+./gradlew :app:bundleRemoteOnlyRelease
 ```
 
 QA matrix and regression command list: `apps/android/docs/qa-matrix.md`.
@@ -47,3 +49,25 @@ Build and copy JNI artifacts into `core:bridge`:
 Prerequisites:
 - Android NDK (`ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT` set)
 - `cargo-ndk` (`cargo install cargo-ndk`)
+
+## Play Store Testing Upload
+
+From repository root:
+
+```bash
+PACKAGE_NAME=com.sigkitten.litter.android \
+SERVICE_ACCOUNT_JSON="$HOME/play-service-account.json" \
+./tools/scripts/playstore-setup.sh
+
+PACKAGE_NAME=com.sigkitten.litter.android \
+SERVICE_ACCOUNT_JSON="$HOME/play-service-account.json" \
+KEYSTORE_PATH="$HOME/upload-keystore.jks" \
+KEYSTORE_PASSWORD='<store-password>' \
+KEY_ALIAS='<key-alias>' \
+KEY_PASSWORD='<key-password>' \
+FLAVOR=onDevice \
+TRACK=internal \
+./tools/scripts/playstore-upload.sh
+```
+
+`TRACK=closed` maps to Play `alpha`, and `TRACK=open` maps to `beta`.
