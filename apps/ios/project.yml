@@ -37,6 +37,9 @@ targets:
       - path: Sources/Litter
         excludes:
           - "**/*.h"
+    resources:
+      - path: Sources/Litter/Resources/ios_system/commandDictionary.plist
+      - path: Sources/Litter/Resources/ios_system/extraCommandsDictionary.plist
     dependencies:
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
@@ -70,6 +73,9 @@ targets:
       - path: Sources/Litter
         excludes:
           - "**/*.h"
+    resources:
+      - path: Sources/Litter/Resources/ios_system/commandDictionary.plist
+      - path: Sources/Litter/Resources/ios_system/extraCommandsDictionary.plist
     dependencies:
       - framework: Frameworks/codex_bridge.xcframework
         embed: false

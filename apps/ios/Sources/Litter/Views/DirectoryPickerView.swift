@@ -253,6 +253,12 @@ struct DirectoryPickerView: View {
         let normalizedPath = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "/" : path
         isLoading = true
         errorMessage = nil
+
+        if connection.server.source == .local {
+            await listLocalDirectory(serverId: serverId, path: normalizedPath)
+            return
+        }
+
         do {
             let resp = try await connection.execCommand(
                 ["/bin/ls", "-1ap", normalizedPath],
@@ -274,6 +280,26 @@ struct DirectoryPickerView: View {
             errorMessage = error.localizedDescription
         }
         if serverId == selectedServerId {
+            isLoading = false
+        }
+    }
+
+    private func listLocalDirectory(serverId: String, path: String) async {
+        let fm = FileManager.default
+        do {
+            let names = try fm.contentsOfDirectory(atPath: path)
+            let dirs = names.filter { name in
+                var isDir: ObjCBool = false
+                let fullPath = (path as NSString).appendingPathComponent(name)
+                _ = fm.fileExists(atPath: fullPath, isDirectory: &isDir)
+                return isDir.boolValue
+            }
+            guard serverId == selectedServerId else { return }
+            allEntries = dirs.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            isLoading = false
+        } catch {
+            guard serverId == selectedServerId else { return }
+            errorMessage = error.localizedDescription
             isLoading = false
         }
     }

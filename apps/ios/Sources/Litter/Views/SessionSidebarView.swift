@@ -402,11 +402,7 @@ struct SessionSidebarView: View {
         resumingKey = thread.key
         workDir = thread.cwd
         appState.currentCwd = thread.cwd
-        await serverManager.viewThread(
-            thread.key,
-            approvalPolicy: appState.approvalPolicy,
-            sandboxMode: appState.sandboxMode
-        )
+        await serverManager.viewThread(thread.key)
         resumingKey = nil
         withAnimation(.easeInOut(duration: 0.25)) { appState.sidebarOpen = false }
     }
@@ -415,13 +411,7 @@ struct SessionSidebarView: View {
         workDir = cwd
         appState.currentCwd = cwd
         let model = appState.selectedModel.isEmpty ? nil : appState.selectedModel
-        _ = await serverManager.startThread(
-            serverId: serverId,
-            cwd: cwd,
-            model: model,
-            approvalPolicy: appState.approvalPolicy,
-            sandboxMode: appState.sandboxMode
-        )
+        _ = await serverManager.startThread(serverId: serverId, cwd: cwd, model: model)
         withAnimation(.easeInOut(duration: 0.25)) { appState.sidebarOpen = false }
     }
 
