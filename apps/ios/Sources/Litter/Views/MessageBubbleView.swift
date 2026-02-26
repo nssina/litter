@@ -27,6 +27,7 @@ struct MessageBubbleView: View {
                 Spacer(minLength: 20)
             }
         }
+        .textSelection(.enabled)
         .enableInjection()
     }
 
@@ -52,6 +53,7 @@ struct MessageBubbleView: View {
                 Text(message.text)
                     .font(.system(.callout, design: .monospaced))
                     .foregroundColor(.white)
+                    .textSelection(.enabled)
             }
         }
         .padding(.horizontal, 14)
@@ -65,10 +67,12 @@ struct MessageBubbleView: View {
             ForEach(Array(parsed.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .text(let md):
-                    Markdown(md)
-                        .markdownTheme(.litter(bodySize: mdBodySize, codeSize: mdCodeSize))
-                        .markdownCodeSyntaxHighlighter(.plain)
-                        .textSelection(.enabled)
+                    selectableMarkdownText(
+                        md,
+                        bodySize: mdBodySize,
+                        codeSize: mdCodeSize,
+                        useSystemTheme: false
+                    )
                 case .imageData(let data):
                     if let uiImage = UIImage(data: data) {
                         Image(uiImage: uiImage)
@@ -136,10 +140,12 @@ struct MessageBubbleView: View {
 
             // Expanded body
             if !toolCall || expanded {
-                Markdown(body)
-                    .markdownTheme(.litterSystem(bodySize: mdSystemBodySize, codeSize: mdSystemCodeSize))
-                    .markdownCodeSyntaxHighlighter(.plain)
-                    .textSelection(.enabled)
+                selectableMarkdownText(
+                    body,
+                    bodySize: mdSystemBodySize,
+                    codeSize: mdSystemCodeSize,
+                    useSystemTheme: true
+                )
                     .padding(.top, 8)
             }
         }
@@ -224,6 +230,35 @@ struct MessageBubbleView: View {
         let title = first.dropFirst(4).trimmingCharacters(in: .whitespacesAndNewlines)
         let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return (title.isEmpty ? nil : title, body)
+    }
+
+    private func selectableMarkdownText(
+        _ markdown: String,
+        bodySize: CGFloat,
+        codeSize: CGFloat,
+        useSystemTheme: Bool
+    ) -> some View {
+        Group {
+            if useSystemTheme {
+                Markdown(markdown)
+                    .markdownTheme(.litterSystem(bodySize: bodySize, codeSize: codeSize))
+                    .markdownCodeSyntaxHighlighter(.plain)
+            } else {
+                Markdown(markdown)
+                    .markdownTheme(.litter(bodySize: bodySize, codeSize: codeSize))
+                    .markdownCodeSyntaxHighlighter(.plain)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            SelectableMarkdownTextView(
+                markdown: markdown,
+                baseFont: .monospacedSystemFont(ofSize: bodySize, weight: .regular),
+                textColor: UIColor.white.withAlphaComponent(0.015),
+                linkColor: UIColor(LitterTheme.accent).withAlphaComponent(0.02),
+                selectionTintColor: UIColor(LitterTheme.accent)
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func systemTheme(for title: String?) -> (accent: Color, icon: String) {
@@ -315,6 +350,71 @@ struct MessageBubbleView: View {
         }
 
         return segments.isEmpty ? [.text(text)] : segments
+    }
+}
+
+private struct SelectableMarkdownTextView: UIViewRepresentable {
+    let markdown: String
+    let baseFont: UIFont
+    let textColor: UIColor
+    let linkColor: UIColor
+    let selectionTintColor: UIColor
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .clear
+        textView.isOpaque = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textContainer.lineBreakMode = .byWordWrapping
+        textView.adjustsFontForContentSizeCategory = true
+        textView.dataDetectorTypes = []
+        textView.linkTextAttributes = [.foregroundColor: linkColor]
+        textView.tintColor = selectionTintColor
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        uiView.attributedText = attributedMarkdown()
+        uiView.tintColor = selectionTintColor
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? UIScreen.main.bounds.width
+        let fitting = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fitting.height))
+    }
+
+    private func attributedMarkdown() -> NSAttributedString {
+        let parsed = parseMarkdown() ?? NSAttributedString(string: markdown)
+        let mutable = NSMutableAttributedString(attributedString: parsed)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+
+        mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            mutable.addAttribute(.foregroundColor, value: linkColor, range: range)
+            mutable.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        }
+
+        return mutable
+    }
+
+    private func parseMarkdown() -> NSAttributedString? {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        guard let attributed = try? AttributedString(markdown: markdown, options: options) else {
+            return nil
+        }
+        return NSAttributedString(attributed)
     }
 }
 

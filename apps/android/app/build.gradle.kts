@@ -2,7 +2,18 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+    id("com.github.triplet.play")
 }
+
+fun projectPropOrEnv(name: String): String? =
+    (findProperty(name) as? String)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val uploadStoreFile = projectPropOrEnv("LITTER_UPLOAD_STORE_FILE")
+val uploadStorePassword = projectPropOrEnv("LITTER_UPLOAD_STORE_PASSWORD")
+val uploadKeyAlias = projectPropOrEnv("LITTER_UPLOAD_KEY_ALIAS")
+val uploadKeyPassword = projectPropOrEnv("LITTER_UPLOAD_KEY_PASSWORD")
+val hasUploadSigning = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.sigkitten.litter.android"
@@ -36,6 +47,17 @@ android {
         }
     }
 
+    if (hasUploadSigning) {
+        signingConfigs {
+            create("upload") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -43,6 +65,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasUploadSigning) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
         }
     }
 
@@ -58,6 +83,15 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+play {
+    defaultToAppBundles.set(true)
+    track.set(projectPropOrEnv("LITTER_PLAY_TRACK") ?: "internal")
+    val serviceAccountPath = projectPropOrEnv("LITTER_PLAY_SERVICE_ACCOUNT_JSON")
+    if (!serviceAccountPath.isNullOrBlank()) {
+        serviceAccountCredentials.set(file(serviceAccountPath))
     }
 }
 

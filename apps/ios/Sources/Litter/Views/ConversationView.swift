@@ -22,8 +22,7 @@ struct ConversationView: View {
             ConversationMessageList(
                 messages: messages,
                 threadStatus: threadStatus,
-                activeThreadKey: serverManager.activeThreadKey,
-                inputFocused: $composerFocused
+                activeThreadKey: serverManager.activeThreadKey
             )
             ConversationInputBar(
                 onSend: sendMessage,
@@ -62,7 +61,6 @@ private struct ConversationMessageList: View {
     let messages: [ChatMessage]
     let threadStatus: ConversationStatus
     let activeThreadKey: ThreadKey?
-    let inputFocused: FocusState<Bool>.Binding
     @State private var pendingScrollWorkItem: DispatchWorkItem?
 
     var body: some View {
@@ -80,12 +78,8 @@ private struct ConversationMessageList: View {
                 }
                 .padding(16)
             }
+            .textSelection(.enabled)
             .scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    inputFocused.wrappedValue = false
-                }
-            )
             .onAppear {
                 scheduleScrollToBottom(proxy, delay: 0)
             }
