@@ -7,10 +7,12 @@ struct SidebarOverlay: View {
     var body: some View {
         ZStack(alignment: .leading) {
             if appState.sidebarOpen {
-                Color.black.opacity(0.5)
+                LitterTheme.overlayScrim
                     .ignoresSafeArea()
+                    .transition(.opacity)
                     .onTapGesture {
                         withAnimation(.easeInOut(duration: 0.25)) {
+                            dragOffset = 0
                             appState.sidebarOpen = false
                         }
                     }
@@ -26,12 +28,10 @@ struct SidebarOverlay: View {
                                 }
                             }
                             .onEnded { value in
-                                if value.translation.width < -80 {
-                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    if value.translation.width < -80 {
                                         appState.sidebarOpen = false
                                     }
-                                }
-                                withAnimation(.easeInOut(duration: 0.25)) {
                                     dragOffset = 0
                                 }
                             }
@@ -39,6 +39,5 @@ struct SidebarOverlay: View {
                     .transition(.move(edge: .leading))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: appState.sidebarOpen)
     }
 }

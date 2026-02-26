@@ -19,6 +19,7 @@ import com.litter.android.state.ServerConfig
 import com.litter.android.state.ServerConnectionStatus
 import com.litter.android.state.ServerManager
 import com.litter.android.state.ServerSource
+import com.litter.android.state.SkillMentionInput
 import com.litter.android.state.SkillMetadata
 import com.litter.android.state.SshAuthMethod
 import com.litter.android.state.SshCredentialStore
@@ -47,10 +48,17 @@ data class DirectoryPickerUiState(
     val selectedServerId: String? = null,
     val currentPath: String = "",
     val entries: List<String> = emptyList(),
+    val recentDirectories: List<RecentDirectoryUiState> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val searchQuery: String = "",
     val showHiddenDirectories: Boolean = false,
+)
+
+data class RecentDirectoryUiState(
+    val path: String,
+    val lastUsedAtEpochMillis: Long,
+    val useCount: Int,
 )
 
 data class UiDiscoveredServer(
@@ -157,9 +165,19 @@ interface LitterAppState : Closeable {
 
     fun navigateDirectoryUp()
 
+    fun navigateDirectoryToPath(path: String)
+
+    fun reloadDirectoryPicker()
+
     fun confirmStartSessionFromPicker()
 
-    fun sendDraft()
+    fun startSessionFromRecent(path: String)
+
+    fun removeRecentDirectory(path: String)
+
+    fun clearRecentDirectories()
+
+    fun sendDraft(skillMentions: List<SkillMentionInput> = emptyList())
 
     fun interrupt()
 
@@ -175,6 +193,30 @@ interface LitterAppState : Closeable {
     fun renameActiveThread(
         name: String,
         onComplete: (Result<Unit>) -> Unit,
+    )
+
+    fun renameSession(
+        threadKey: ThreadKey,
+        name: String,
+        onComplete: (Result<Unit>) -> Unit,
+    )
+
+    fun editMessage(
+        message: ChatMessage,
+    )
+
+    fun forkConversation()
+
+    fun forkSession(
+        threadKey: ThreadKey,
+    )
+
+    fun forkConversationFromMessage(
+        message: ChatMessage,
+    )
+
+    fun archiveSession(
+        threadKey: ThreadKey,
     )
 
     fun listExperimentalFeatures(
@@ -258,6 +300,7 @@ class DefaultLitterAppState(
     private val discoveryService: ServerDiscoveryService = ServerDiscoveryService(),
     private val sshSessionManager: SshSessionManager = SshSessionManager(),
     private val sshCredentialStore: SshCredentialStore? = null,
+    private val recentDirectoryStore: RecentDirectoryStore? = null,
 ) : LitterAppState {
     private val _uiState = MutableStateFlow(UiShellState())
     override val uiState: StateFlow<UiShellState> = _uiState.asStateFlow()
@@ -382,6 +425,7 @@ class DefaultLitterAppState(
                         selectedServerId = selectedServerId,
                         currentPath = "",
                         entries = emptyList(),
+                        recentDirectories = loadRecentDirectoriesForServer(selectedServerId),
                         isLoading = true,
                         errorMessage = null,
                         searchQuery = "",
@@ -401,6 +445,7 @@ class DefaultLitterAppState(
                         isVisible = false,
                         selectedServerId = null,
                         errorMessage = null,
+                        recentDirectories = emptyList(),
                         isLoading = false,
                         searchQuery = "",
                         showHiddenDirectories = false,
@@ -414,7 +459,6 @@ class DefaultLitterAppState(
         if (!picker.isVisible || picker.selectedServerId == serverId) {
             return
         }
-        clearDirectorySearchIfNeeded()
         _uiState.update {
             it.copy(
                 directoryPicker =
@@ -422,8 +466,10 @@ class DefaultLitterAppState(
                         selectedServerId = serverId,
                         currentPath = "",
                         entries = emptyList(),
+                        recentDirectories = loadRecentDirectoriesForServer(serverId),
                         isLoading = true,
                         errorMessage = null,
+                        searchQuery = "",
                     ),
             )
         }
@@ -447,7 +493,6 @@ class DefaultLitterAppState(
     }
 
     override fun navigateDirectoryInto(entry: String) {
-        clearDirectorySearchIfNeeded()
         val picker = _uiState.value.directoryPicker
         val serverId = picker.selectedServerId
         if (serverId.isNullOrBlank()) {
@@ -465,7 +510,6 @@ class DefaultLitterAppState(
     }
 
     override fun navigateDirectoryUp() {
-        clearDirectorySearchIfNeeded()
         val picker = _uiState.value.directoryPicker
         val serverId = picker.selectedServerId
         if (serverId.isNullOrBlank()) {
@@ -482,6 +526,27 @@ class DefaultLitterAppState(
         loadDirectory(path = up, serverId = serverId)
     }
 
+    override fun navigateDirectoryToPath(path: String) {
+        val picker = _uiState.value.directoryPicker
+        val serverId = picker.selectedServerId
+        if (serverId.isNullOrBlank()) {
+            setUiError("No server selected for directory picker")
+            return
+        }
+        val normalizedPath = path.trim().ifEmpty { "/" }
+        loadDirectory(path = normalizedPath, serverId = serverId)
+    }
+
+    override fun reloadDirectoryPicker() {
+        val picker = _uiState.value.directoryPicker
+        val serverId = picker.selectedServerId
+        if (serverId.isNullOrBlank()) {
+            return
+        }
+        val targetPath = picker.currentPath.ifBlank { "/" }
+        loadDirectory(path = targetPath, serverId = serverId)
+    }
+
     override fun confirmStartSessionFromPicker() {
         val snapshot = _uiState.value
         val serverId = snapshot.directoryPicker.selectedServerId
@@ -494,7 +559,66 @@ class DefaultLitterAppState(
             setUiError("Directory listing is still loading")
             return
         }
-        val cwd = pickerPath
+        startSessionFromDirectory(
+            serverId = serverId,
+            cwd = pickerPath,
+            snapshot = snapshot,
+        )
+    }
+
+    override fun startSessionFromRecent(path: String) {
+        val snapshot = _uiState.value
+        val serverId = snapshot.directoryPicker.selectedServerId
+        if (serverId.isNullOrBlank()) {
+            setUiError("No server selected for new session")
+            return
+        }
+        val cwd = path.trim()
+        if (cwd.isEmpty()) {
+            return
+        }
+        startSessionFromDirectory(
+            serverId = serverId,
+            cwd = cwd,
+            snapshot = snapshot,
+        )
+    }
+
+    override fun removeRecentDirectory(path: String) {
+        val serverId = _uiState.value.directoryPicker.selectedServerId
+        if (serverId.isNullOrBlank()) {
+            return
+        }
+        val updatedRecents =
+            recentDirectoryStore
+                ?.remove(serverId = serverId, path = path)
+                ?.map { it.toUiState() }
+                .orEmpty()
+        _uiState.update { current ->
+            current.copy(
+                directoryPicker = current.directoryPicker.copy(recentDirectories = updatedRecents),
+            )
+        }
+    }
+
+    override fun clearRecentDirectories() {
+        val serverId = _uiState.value.directoryPicker.selectedServerId
+        if (serverId.isNullOrBlank()) {
+            return
+        }
+        recentDirectoryStore?.clear(serverId)
+        _uiState.update { current ->
+            current.copy(
+                directoryPicker = current.directoryPicker.copy(recentDirectories = emptyList()),
+            )
+        }
+    }
+
+    private fun startSessionFromDirectory(
+        serverId: String,
+        cwd: String,
+        snapshot: UiShellState,
+    ) {
         val modelSelection =
             ModelSelection(
                 modelId = snapshot.selectedModelId,
@@ -509,6 +633,11 @@ class DefaultLitterAppState(
                 setUiError(error.message ?: "Failed to start session")
             }
             result.onSuccess {
+                val updatedRecents =
+                    recentDirectoryStore
+                        ?.record(serverId = serverId, path = cwd)
+                        ?.map { it.toUiState() }
+                        .orEmpty()
                 directoryPickerRequestVersion.incrementAndGet()
                 _uiState.update {
                     it.copy(
@@ -519,6 +648,7 @@ class DefaultLitterAppState(
                                 isVisible = false,
                                 selectedServerId = null,
                                 errorMessage = null,
+                                recentDirectories = updatedRecents,
                                 searchQuery = "",
                                 showHiddenDirectories = false,
                             ),
@@ -529,7 +659,7 @@ class DefaultLitterAppState(
         }
     }
 
-    override fun sendDraft() {
+    override fun sendDraft(skillMentions: List<SkillMentionInput>) {
         val snapshot = _uiState.value
         val prompt = snapshot.draft.trim()
         if (prompt.isEmpty() || snapshot.isSending) {
@@ -548,6 +678,7 @@ class DefaultLitterAppState(
             text = prompt,
             cwd = snapshot.currentCwd,
             modelSelection = modelSelection,
+            skillMentions = skillMentions,
         ) { result ->
             result.onFailure { error ->
                 setUiError(error.message ?: "Failed to send message")
@@ -599,6 +730,68 @@ class DefaultLitterAppState(
                 setUiError(error.message ?: "Failed to rename thread")
             }
             onComplete(result)
+        }
+    }
+
+    override fun renameSession(
+        threadKey: ThreadKey,
+        name: String,
+        onComplete: (Result<Unit>) -> Unit,
+    ) {
+        serverManager.renameThread(threadKey, name) { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to rename thread")
+            }
+            onComplete(result)
+        }
+    }
+
+    override fun editMessage(message: ChatMessage) {
+        serverManager.editMessage(message.id) { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to edit message")
+            }
+            result.onSuccess {
+                _uiState.update { it.copy(draft = message.text) }
+            }
+        }
+    }
+
+    override fun forkConversation() {
+        serverManager.forkConversation { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to fork conversation")
+            }
+            result.onSuccess {
+                _uiState.update { it.copy(isSidebarOpen = false, sessionSearchQuery = "") }
+            }
+        }
+    }
+
+    override fun forkSession(threadKey: ThreadKey) {
+        serverManager.forkThread(threadKey) { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to fork conversation")
+            }
+            result.onSuccess {
+                _uiState.update { it.copy(isSidebarOpen = false, sessionSearchQuery = "") }
+            }
+        }
+    }
+
+    override fun forkConversationFromMessage(message: ChatMessage) {
+        serverManager.forkConversationFromMessage(message.id) { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to fork conversation")
+            }
+        }
+    }
+
+    override fun archiveSession(threadKey: ThreadKey) {
+        serverManager.archiveThread(threadKey) { result ->
+            result.onFailure { error ->
+                setUiError(error.message ?: "Failed to delete session")
+            }
         }
     }
 
@@ -1197,6 +1390,12 @@ class DefaultLitterAppState(
         }
     }
 
+    private fun loadRecentDirectoriesForServer(serverId: String): List<RecentDirectoryUiState> =
+        recentDirectoryStore
+            ?.listForServer(serverId = serverId)
+            ?.map { it.toUiState() }
+            .orEmpty()
+
     private fun loadDirectory(
         path: String,
         serverId: String,
@@ -1294,19 +1493,6 @@ class DefaultLitterAppState(
         return picker.isVisible && picker.selectedServerId == serverId
     }
 
-    private fun clearDirectorySearchIfNeeded() {
-        _uiState.update { current ->
-            val picker = current.directoryPicker
-            if (picker.searchQuery.isEmpty()) {
-                current
-            } else {
-                current.copy(
-                    directoryPicker = picker.copy(searchQuery = ""),
-                )
-            }
-        }
-    }
-
     private fun mergeBackendState(backend: AppState) {
         val activeThread = backend.activeThread
         val activeServerId = backend.activeServerId ?: backend.activeThreadKey?.serverId ?: backend.servers.firstOrNull()?.id
@@ -1330,6 +1516,7 @@ class DefaultLitterAppState(
                             selectedServerId = null,
                             currentPath = "",
                             entries = emptyList(),
+                            recentDirectories = emptyList(),
                             isLoading = false,
                             errorMessage = null,
                             searchQuery = "",
@@ -1342,6 +1529,7 @@ class DefaultLitterAppState(
                             selectedServerId = resolvedServerId,
                             currentPath = "",
                             entries = emptyList(),
+                            recentDirectories = loadRecentDirectoriesForServer(resolvedServerId),
                             isLoading = true,
                             errorMessage = null,
                             searchQuery = "",
@@ -1475,6 +1663,13 @@ class DefaultLitterAppState(
             DiscoverySource.MANUAL -> ServerSource.MANUAL
             DiscoverySource.LAN -> ServerSource.REMOTE
         }
+
+    private fun RecentDirectoryEntry.toUiState(): RecentDirectoryUiState =
+        RecentDirectoryUiState(
+            path = path,
+            lastUsedAtEpochMillis = lastUsedAtEpochMillis,
+            useCount = useCount,
+        )
 }
 
 @Composable
@@ -1485,13 +1680,15 @@ fun rememberLitterAppState(
     val discoveryService = androidx.compose.runtime.remember(appContext) { ServerDiscoveryService(appContext) }
     val sshSessionManager = androidx.compose.runtime.remember { SshSessionManager() }
     val sshCredentialStore = androidx.compose.runtime.remember(appContext) { SshCredentialStore(appContext) }
+    val recentDirectoryStore = androidx.compose.runtime.remember(appContext) { RecentDirectoryStore(appContext) }
     val appState =
-        androidx.compose.runtime.remember(serverManager, discoveryService, sshSessionManager, sshCredentialStore) {
+        androidx.compose.runtime.remember(serverManager, discoveryService, sshSessionManager, sshCredentialStore, recentDirectoryStore) {
             DefaultLitterAppState(
                 serverManager = serverManager,
                 discoveryService = discoveryService,
                 sshSessionManager = sshSessionManager,
                 sshCredentialStore = sshCredentialStore,
+                recentDirectoryStore = recentDirectoryStore,
             )
         }
     androidx.compose.runtime.DisposableEffect(appState) {

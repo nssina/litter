@@ -16,6 +16,7 @@ settings:
     SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
     OTHER_LDFLAGS: "$(inherited) -lc++ -lz"
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    ENABLE_APP_INTENTS_METADATA_GENERATION: NO
 
 packages:
   Citadel:
@@ -27,6 +28,9 @@ packages:
   Inject:
     url: https://github.com/krzysztofzablocki/Inject
     from: "1.5.2"
+  Highlightr:
+    url: https://github.com/raspu/Highlightr
+    from: "2.1.0"
 
 targets:
   LitterRemote:
@@ -44,6 +48,7 @@ targets:
       - package: Citadel
       - package: MarkdownUI
       - package: Inject
+      - package: Highlightr
       - framework: Frameworks/ios_system/ios_system.xcframework
         embed: true
       - framework: Frameworks/ios_system/shell.xcframework
@@ -79,6 +84,7 @@ targets:
       - package: Citadel
       - package: MarkdownUI
       - package: Inject
+      - package: Highlightr
       - framework: Frameworks/ios_system/ios_system.xcframework
         embed: true
       - framework: Frameworks/ios_system/shell.xcframework
@@ -96,6 +102,19 @@ targets:
       configs:
         Debug:
           OTHER_LDFLAGS: "$(inherited) -lc++ -lz"
+  CodexIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests/CodexIOSTests
+    dependencies:
+      - target: Litter
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGNING_ALLOWED: false
+        CODE_SIGNING_REQUIRED: false
 
 schemes:
   LitterRemote:
@@ -123,6 +142,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - CodexIOSTests
     profile:
       config: Release
     analyze:

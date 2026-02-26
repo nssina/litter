@@ -20,7 +20,7 @@ final class NetworkDiscovery: ObservableObject {
 
     private var scanTask: Task<Void, Never>?
     private var activeScanID = UUID()
-    private static let codexDiscoveryPorts: [UInt16] = [8390, 4222]
+    nonisolated private static let codexDiscoveryPorts: [UInt16] = [8390, 4222]
 
     func startScanning() {
         stopScanning()
@@ -267,7 +267,7 @@ final class NetworkDiscovery: ObservableObject {
             let name = String(cString: ptr.pointee.ifa_name)
             guard name.hasPrefix("en") else { continue }
             var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-            ptr.pointee.ifa_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+            _ = ptr.pointee.ifa_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
                 inet_ntop(AF_INET, &sin.pointee.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN))
             }
             return (String(cString: buf), name)
@@ -277,7 +277,7 @@ final class NetworkDiscovery: ObservableObject {
 }
 
 @MainActor
-private final class BonjourSSHDiscoverer: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
+private final class BonjourSSHDiscoverer: NSObject, @preconcurrency NetServiceBrowserDelegate, @preconcurrency NetServiceDelegate {
     private let browser = NetServiceBrowser()
     private var services: [NetService] = []
     private var results: [String: String] = [:]
@@ -294,7 +294,7 @@ private final class BonjourSSHDiscoverer: NSObject, NetServiceBrowserDelegate, N
                 guard let self else { return }
                 let nanos = UInt64(max(timeout, 0.25) * 1_000_000_000)
                 try? await Task.sleep(nanoseconds: nanos)
-                await self.finish()
+                self.finish()
             }
         }
     }

@@ -6,6 +6,7 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 BRIDGE_DIR="$REPO_DIR/shared/rust-bridge/codex-bridge"
 FRAMEWORKS_DIR="$IOS_DIR/Frameworks"
+IOS_DEPLOYMENT_TARGET="26.0"
 
 mkdir -p "$FRAMEWORKS_DIR"
 
@@ -13,6 +14,9 @@ echo "==> Preparing codex submodule..."
 "$SCRIPT_DIR/sync-codex.sh"
 
 cd "$BRIDGE_DIR"
+
+export IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET"
+echo "==> Using iOS deployment target: $IPHONEOS_DEPLOYMENT_TARGET"
 
 echo "==> Installing iOS targets..."
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios

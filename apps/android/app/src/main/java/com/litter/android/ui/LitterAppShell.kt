@@ -7,13 +7,18 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.text.format.DateUtils
 import android.util.Base64
+import android.util.Log
 import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -33,6 +38,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -65,8 +71,10 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -92,11 +100,17 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,17 +133,19 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litter.android.core.network.DiscoverySource
 import com.litter.android.state.AccountState
@@ -142,31 +158,56 @@ import com.litter.android.state.ModelOption
 import com.litter.android.state.ServerConfig
 import com.litter.android.state.ServerConnectionStatus
 import com.litter.android.state.ServerSource
+import com.litter.android.state.SkillMentionInput
 import com.litter.android.state.SkillMetadata
 import com.litter.android.state.ThreadKey
 import com.litter.android.state.ThreadState
+import com.makyinc.litter.android.BuildConfig
 import com.makyinc.litter.android.R
 import io.noties.markwon.Markwon
+import io.noties.markwon.syntax.Prism4jThemeDarkula
+import io.noties.markwon.syntax.SyntaxHighlightPlugin
+import io.noties.prism4j.GrammarLocator
+import io.noties.prism4j.Prism4j
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.LinkedHashMap
 import java.util.Locale
 
-@Composable
-fun LitterAppShell(appState: LitterAppState) {
-    val uiState by appState.uiState.collectAsStateWithLifecycle()
-    val drawerWidth = 304.dp
-    val drawerOffset by
-        animateDpAsState(
-            targetValue = if (uiState.isSidebarOpen) 0.dp else -drawerWidth,
-            animationSpec = tween(durationMillis = 220),
-            label = "sidebar_offset",
-        )
+private const val PERF_LOG_TAG = "LitterComposePerf"
 
-    Box(modifier = Modifier.fillMaxSize().background(LitterTheme.backgroundBrush)) {
+private fun Context.berkeleyMonoTypeface(): Typeface =
+    ResourcesCompat.getFont(this, R.font.berkeley_mono_variable) ?: Typeface.MONOSPACE
+
+@Composable
+private fun DebugRecomposeCheckpoint(name: String) {
+    if (!BuildConfig.DEBUG) {
+        return
+    }
+    val counter = remember(name) { mutableIntStateOf(0) }
+    SideEffect {
+        counter.intValue += 1
+        if (counter.intValue == 1 || counter.intValue % 25 == 0) {
+            Log.d(PERF_LOG_TAG, "$name recomposed ${counter.intValue}x")
+        }
+    }
+}
+
+@Composable
+fun LitterAppShell(
+    appState: LitterAppState,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by appState.uiState.collectAsStateWithLifecycle()
+    DebugRecomposeCheckpoint(name = "LitterAppShell")
+    val drawerWidth = 304.dp
+
+    Box(modifier = modifier.fillMaxSize().background(LitterTheme.backgroundBrush)) {
         Column(
             modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         ) {
@@ -211,9 +252,12 @@ fun LitterAppShell(appState: LitterAppState) {
                     onListExperimentalFeatures = appState::listExperimentalFeatures,
                     onSetExperimentalFeatureEnabled = appState::setExperimentalFeatureEnabled,
                     onListSkills = appState::listSkills,
-                    onSend = { payloadDraft ->
+                    onForkConversation = appState::forkConversation,
+                    onEditMessage = appState::editMessage,
+                    onForkFromMessage = appState::forkConversationFromMessage,
+                    onSend = { payloadDraft, skillMentions ->
                         appState.updateDraft(payloadDraft)
-                        appState.sendDraft()
+                        appState.sendDraft(skillMentions)
                     },
                     onInterrupt = appState::interrupt,
                 )
@@ -234,32 +278,40 @@ fun LitterAppShell(appState: LitterAppState) {
             )
         }
 
-        SessionSidebar(
-            modifier =
-                Modifier
-                    .fillMaxHeight()
-                    .width(drawerWidth)
-                    .offset(x = drawerOffset),
-            connectionStatus = uiState.connectionStatus,
-            serverCount = uiState.serverCount,
-            sessions = uiState.sessions,
-            sessionSearchQuery = uiState.sessionSearchQuery,
-            collapsedSessionFolders = uiState.collapsedSessionFolders,
-            activeThreadKey = uiState.activeThreadKey,
-            onSessionSelected = appState::selectSession,
-            onSessionSearchQueryChange = appState::updateSessionSearchQuery,
-            onToggleSessionFolder = appState::toggleSessionFolder,
-            onNewSession = appState::openNewSessionPicker,
-            onRefresh = appState::refreshSessions,
-            onOpenDiscovery = {
-                appState.dismissSidebar()
-                appState.openDiscovery()
-            },
-            onOpenSettings = {
-                appState.dismissSidebar()
-                appState.openSettings()
-            },
-        )
+        AnimatedVisibility(
+            visible = uiState.isSidebarOpen,
+            enter = slideInHorizontally(animationSpec = tween(durationMillis = 220)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(durationMillis = 220)),
+            exit = slideOutHorizontally(animationSpec = tween(durationMillis = 200)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(durationMillis = 200)),
+        ) {
+            SessionSidebar(
+                modifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .width(drawerWidth),
+                connectionStatus = uiState.connectionStatus,
+                connectedServers = uiState.connectedServers,
+                sessions = uiState.sessions,
+                isSidebarOpen = uiState.isSidebarOpen,
+                sessionSearchQuery = uiState.sessionSearchQuery,
+                activeThreadKey = uiState.activeThreadKey,
+                onSessionSelected = appState::selectSession,
+                onSessionSearchQueryChange = appState::updateSessionSearchQuery,
+                onNewSession = appState::openNewSessionPicker,
+                onRefresh = appState::refreshSessions,
+                onForkConversation = appState::forkConversation,
+                onForkSession = appState::forkSession,
+                onRenameSession = appState::renameSession,
+                onArchiveSession = appState::archiveSession,
+                onOpenDiscovery = {
+                    appState.dismissSidebar()
+                    appState.openDiscovery()
+                },
+                onOpenSettings = {
+                    appState.dismissSidebar()
+                    appState.openSettings()
+                },
+            )
+        }
 
         if (uiState.directoryPicker.isVisible) {
             DirectoryPickerSheet(
@@ -267,6 +319,7 @@ fun LitterAppShell(appState: LitterAppState) {
                 selectedServerId = uiState.directoryPicker.selectedServerId,
                 path = uiState.directoryPicker.currentPath,
                 entries = uiState.directoryPicker.entries,
+                recentDirectories = uiState.directoryPicker.recentDirectories,
                 isLoading = uiState.directoryPicker.isLoading,
                 error = uiState.directoryPicker.errorMessage,
                 searchQuery = uiState.directoryPicker.searchQuery,
@@ -277,7 +330,12 @@ fun LitterAppShell(appState: LitterAppState) {
                 onShowHiddenDirectoriesChange = appState::updateShowHiddenDirectories,
                 onNavigateUp = appState::navigateDirectoryUp,
                 onNavigateInto = appState::navigateDirectoryInto,
+                onNavigateToPath = appState::navigateDirectoryToPath,
                 onSelect = appState::confirmStartSessionFromPicker,
+                onSelectRecent = appState::startSessionFromRecent,
+                onRemoveRecentDirectory = appState::removeRecentDirectory,
+                onClearRecentDirectories = appState::clearRecentDirectories,
+                onRetry = appState::reloadDirectoryPicker,
             )
         }
 
@@ -472,10 +530,10 @@ private fun ModelSelector(
 private fun StatusDot(connectionStatus: ServerConnectionStatus) {
     val color =
         when (connectionStatus) {
-            ServerConnectionStatus.CONNECTING -> Color(0xFFE2A644)
-            ServerConnectionStatus.READY -> LitterTheme.accent
-            ServerConnectionStatus.ERROR -> LitterTheme.danger
-            ServerConnectionStatus.DISCONNECTED -> LitterTheme.textMuted
+            ServerConnectionStatus.CONNECTING -> LitterTheme.statusConnecting
+            ServerConnectionStatus.READY -> LitterTheme.statusReady
+            ServerConnectionStatus.ERROR -> LitterTheme.statusError
+            ServerConnectionStatus.DISCONNECTED -> LitterTheme.statusDisconnected
         }
     Box(
         modifier =
@@ -542,7 +600,7 @@ private fun EmptyState(
             }
             if (canConnect) {
                 OutlinedButton(onClick = onOpenDiscovery) {
-                    Text("Connect to Server", color = LitterTheme.accent)
+                    Text(stringResource(R.string.connect_to_server), color = LitterTheme.accent)
                 }
             }
         }
@@ -551,30 +609,147 @@ private fun EmptyState(
 
 @Composable
 private fun SessionSidebar(
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
     connectionStatus: ServerConnectionStatus,
-    serverCount: Int,
+    connectedServers: List<ServerConfig>,
     sessions: List<ThreadState>,
+    isSidebarOpen: Boolean,
     sessionSearchQuery: String,
-    collapsedSessionFolders: Set<String>,
     activeThreadKey: ThreadKey?,
     onSessionSelected: (ThreadKey) -> Unit,
     onSessionSearchQueryChange: (String) -> Unit,
-    onToggleSessionFolder: (String) -> Unit,
     onNewSession: () -> Unit,
     onRefresh: () -> Unit,
+    onForkConversation: () -> Unit,
+    onForkSession: (ThreadKey) -> Unit,
+    onRenameSession: (ThreadKey, String, (Result<Unit>) -> Unit) -> Unit,
+    onArchiveSession: (ThreadKey) -> Unit,
     onOpenDiscovery: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val normalizedQuery = sessionSearchQuery.trim()
-    val filteredSessions =
-        if (normalizedQuery.isEmpty()) {
-            sessions
-        } else {
-            sessions.filter { matchesSessionSearch(it, normalizedQuery) }
+    DebugRecomposeCheckpoint(name = "SessionSidebar")
+    var showOnlyForks by rememberSaveable { mutableStateOf(false) }
+    var selectedServerFilterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var isServerFilterMenuOpen by remember { mutableStateOf(false) }
+    val collapsedWorkspaceIdsSaver =
+        remember {
+            listSaver<Set<String>, String>(
+                save = { it.toList() },
+                restore = { restored -> restored.toSet() },
+            )
         }
-    val groupedSessions = remember(filteredSessions) { groupSessionsByFolder(filteredSessions) }
-    val isFilteringSessions = normalizedQuery.isNotEmpty()
+    var collapsedWorkspaceGroupIds by rememberSaveable(stateSaver = collapsedWorkspaceIdsSaver) { mutableStateOf(setOf<String>()) }
+    var rowMenuThreadKey by remember { mutableStateOf<ThreadKey?>(null) }
+    var renameTargetThread by remember { mutableStateOf<ThreadState?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var renameError by remember { mutableStateOf<String?>(null) }
+    var archiveTargetThread by remember { mutableStateOf<ThreadState?>(null) }
+    val sessionListState = rememberLazyListState()
+    var pendingActiveSessionScroll by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isSidebarOpen) {
+        pendingActiveSessionScroll = isSidebarOpen
+    }
+
+    LaunchedEffect(connectedServers, selectedServerFilterId) {
+        if (selectedServerFilterId != null && connectedServers.none { it.id == selectedServerFilterId }) {
+            selectedServerFilterId = null
+        }
+    }
+
+    val lineageIndex = remember(sessions) { buildThreadLineageIndex(sessions) }
+    val normalizedQuery by remember(sessionSearchQuery) {
+        derivedStateOf { sessionSearchQuery.trim().lowercase(Locale.ROOT) }
+    }
+    val filteredSessions by
+        remember(sessions, selectedServerFilterId, showOnlyForks, normalizedQuery, lineageIndex.searchableTextByKey) {
+            derivedStateOf {
+                sessions
+                    .asSequence()
+                    .filter { thread ->
+                        val serverMatches = selectedServerFilterId == null || thread.key.serverId == selectedServerFilterId
+                        val forkMatches = !showOnlyForks || thread.isFork
+                        val searchMatches =
+                            normalizedQuery.isEmpty() ||
+                                matchesSessionSearch(
+                                    thread = thread,
+                                    normalizedQuery = normalizedQuery,
+                                    searchableTextByKey = lineageIndex.searchableTextByKey,
+                                )
+                        serverMatches && forkMatches && searchMatches
+                    }.toList()
+            }
+        }
+    val workspaceGroups by remember(filteredSessions) { derivedStateOf { groupSessionsByWorkspace(filteredSessions) } }
+    val activeWorkspaceGroupId by
+        remember(workspaceGroups, activeThreadKey) {
+            derivedStateOf {
+                val targetKey = activeThreadKey ?: return@derivedStateOf null
+                workspaceGroups.firstOrNull { group -> group.threads.any { it.key == targetKey } }?.id
+            }
+        }
+    val activeSessionItemIndex by
+        remember(workspaceGroups, collapsedWorkspaceGroupIds, activeThreadKey) {
+            derivedStateOf {
+                val targetKey = activeThreadKey ?: return@derivedStateOf null
+                var runningIndex = 0
+                for (group in workspaceGroups) {
+                    runningIndex += 1 // workspace header row
+                    if (collapsedWorkspaceGroupIds.contains(group.id)) {
+                        continue
+                    }
+                    val threadIndex = group.threads.indexOfFirst { it.key == targetKey }
+                    if (threadIndex >= 0) {
+                        return@derivedStateOf runningIndex + threadIndex
+                    }
+                    runningIndex += group.threads.size
+                }
+                null
+            }
+        }
+    val serverNameById =
+        remember(connectedServers) {
+            connectedServers.associate { it.id to it.name }
+        }
+
+    LaunchedEffect(workspaceGroups) {
+        val validIds = workspaceGroups.map { it.id }.toSet()
+        collapsedWorkspaceGroupIds = collapsedWorkspaceGroupIds.intersect(validIds)
+    }
+
+    LaunchedEffect(
+        pendingActiveSessionScroll,
+        isSidebarOpen,
+        activeThreadKey,
+        activeWorkspaceGroupId,
+        activeSessionItemIndex,
+        collapsedWorkspaceGroupIds,
+    ) {
+        if (!pendingActiveSessionScroll || !isSidebarOpen) {
+            return@LaunchedEffect
+        }
+        if (activeThreadKey == null) {
+            pendingActiveSessionScroll = false
+            return@LaunchedEffect
+        }
+        val targetGroupId = activeWorkspaceGroupId
+        if (targetGroupId == null) {
+            pendingActiveSessionScroll = false
+            return@LaunchedEffect
+        }
+        if (collapsedWorkspaceGroupIds.contains(targetGroupId)) {
+            collapsedWorkspaceGroupIds = collapsedWorkspaceGroupIds - targetGroupId
+            return@LaunchedEffect
+        }
+        val targetIndex = activeSessionItemIndex
+        if (targetIndex == null) {
+            pendingActiveSessionScroll = false
+            return@LaunchedEffect
+        }
+
+        pendingActiveSessionScroll = false
+        sessionListState.scrollToItem(targetIndex)
+    }
 
     Surface(
         modifier = modifier,
@@ -598,10 +773,11 @@ private fun SessionSidebar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                val activeSession = sessions.firstOrNull { it.key == activeThreadKey }
                 Text(
                     text =
                         if (connectionStatus == ServerConnectionStatus.READY) {
-                            "$serverCount server${if (serverCount == 1) "" else "s"}"
+                            "${connectedServers.size} server${if (connectedServers.size == 1) "" else "s"}"
                         } else {
                             "Not connected"
                         },
@@ -611,6 +787,14 @@ private fun SessionSidebar(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onOpenDiscovery) {
                         Text(if (connectionStatus == ServerConnectionStatus.READY) "Add" else "Connect")
+                    }
+                    if (activeSession != null) {
+                        TextButton(
+                            enabled = !activeSession.hasTurnActive,
+                            onClick = onForkConversation,
+                        ) {
+                            Text("Fork")
+                        }
                     }
                     TextButton(onClick = onRefresh) {
                         Text("Refresh")
@@ -635,42 +819,111 @@ private fun SessionSidebar(
                     singleLine = true,
                 )
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val selectedServerName =
+                        selectedServerFilterId
+                            ?.let { id -> serverNameById[id] }
+                            ?: "All servers"
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { isServerFilterMenuOpen = true },
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text(selectedServerName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        DropdownMenu(
+                            expanded = isServerFilterMenuOpen,
+                            onDismissRequest = { isServerFilterMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("All servers") },
+                                onClick = {
+                                    selectedServerFilterId = null
+                                    isServerFilterMenuOpen = false
+                                },
+                            )
+                            connectedServers.forEach { server ->
+                                DropdownMenuItem(
+                                    text = { Text(server.name) },
+                                    onClick = {
+                                        selectedServerFilterId = server.id
+                                        isServerFilterMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { showOnlyForks = !showOnlyForks },
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(if (showOnlyForks) "Forks only" else "Forks")
+                    }
+
+                    if (selectedServerFilterId != null || showOnlyForks) {
+                        TextButton(
+                            onClick = {
+                                selectedServerFilterId = null
+                                showOnlyForks = false
+                            },
+                        ) {
+                            Text("Clear")
+                        }
+                    }
+                }
+
                 if (filteredSessions.isEmpty()) {
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = "No matches for \"$normalizedQuery\"",
+                        text = if (normalizedQuery.isEmpty()) "No sessions match the active filters" else "No matches for \"$normalizedQuery\"",
                         color = LitterTheme.textMuted,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
                     Spacer(modifier = Modifier.weight(1f))
                 } else {
                     LazyColumn(
+                        state = sessionListState,
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        groupedSessions.forEach { group ->
-                            val isExpanded = isFilteringSessions || !collapsedSessionFolders.contains(group.folderPath)
-                            item(key = "folder-${group.folderPath}") {
-                                FolderGroupHeader(
-                                    folderPath = group.folderPath,
-                                    isExpanded = isExpanded,
-                                    canToggle = !isFilteringSessions,
-                                    onToggle = { onToggleSessionFolder(group.folderPath) },
+                        workspaceGroups.forEach { group ->
+                            val isCollapsed = collapsedWorkspaceGroupIds.contains(group.id)
+                            item(key = "workspace-${group.id}") {
+                                WorkspaceSessionGroupHeader(
+                                    group = group,
+                                    isCollapsed = isCollapsed,
+                                    onToggle = {
+                                        collapsedWorkspaceGroupIds =
+                                            if (isCollapsed) {
+                                                collapsedWorkspaceGroupIds - group.id
+                                            } else {
+                                                collapsedWorkspaceGroupIds + group.id
+                                            }
+                                    },
                                 )
                             }
 
-                            if (isExpanded) {
+                            if (!isCollapsed) {
                                 items(items = group.threads, key = { "${it.key.serverId}:${it.key.threadId}" }) { thread ->
                                     val isActive = thread.key == activeThreadKey
+                                    val parent = lineageIndex.parentByKey[thread.key]
+                                    val siblings = lineageIndex.siblingsByKey[thread.key].orEmpty()
+                                    val children = lineageIndex.childrenByParentKey[thread.key].orEmpty()
+
                                     Surface(
-                                        modifier = Modifier.fillMaxWidth().clickable { onSessionSelected(thread.key) },
-                                        color =
-                                            if (isActive) {
-                                                LitterTheme.surfaceLight.copy(alpha = 0.58f)
-                                            } else {
-                                                LitterTheme.surface.copy(alpha = 0.58f)
-                                            },
-                                        shape = RoundedCornerShape(8.dp),
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onSessionSelected(thread.key) }
+                                                .padding(start = 8.dp),
+                                        color = if (isActive) LitterTheme.surfaceLight.copy(alpha = 0.64f) else LitterTheme.surface.copy(alpha = 0.58f),
+                                        shape = RoundedCornerShape(9.dp),
                                         border =
                                             androidx.compose.foundation.BorderStroke(
                                                 1.dp,
@@ -678,48 +931,149 @@ private fun SessionSidebar(
                                             ),
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.Top,
                                         ) {
-                                            if (thread.hasTurnActive) {
-                                                ActiveTurnPulseDot(modifier = Modifier.padding(top = 3.dp))
-                                            } else {
-                                                Spacer(modifier = Modifier.size(8.dp))
-                                            }
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .padding(top = 8.dp, bottom = 8.dp, start = 6.dp)
+                                                        .width(3.dp)
+                                                        .heightIn(min = 18.dp)
+                                                        .background(if (isActive) LitterTheme.accent else Color.Transparent),
+                                            )
                                             Column(
-                                                modifier = Modifier.weight(1f),
+                                                modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 9.dp),
                                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                                             ) {
-                                                Text(
-                                                    text = thread.preview.ifBlank { "Untitled session" },
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = LitterTheme.textPrimary,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                )
                                                 Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.Top,
                                                 ) {
+                                                    if (thread.hasTurnActive) {
+                                                        ActiveTurnPulseDot(modifier = Modifier.padding(top = 3.dp))
+                                                    } else {
+                                                        Spacer(modifier = Modifier.size(8.dp))
+                                                    }
+
                                                     Text(
-                                                        text = relativeDate(thread.updatedAtEpochMillis),
-                                                        maxLines = 1,
+                                                        text = thread.preview.ifBlank { "Untitled session" },
+                                                        maxLines = 2,
                                                         overflow = TextOverflow.Ellipsis,
-                                                        color = LitterTheme.textSecondary,
-                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = LitterTheme.textPrimary,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        modifier = Modifier.weight(1f),
                                                     )
-                                                    ServerSourceBadge(
-                                                        source = thread.serverSource,
-                                                        serverName = thread.serverName,
-                                                    )
+
+                                                    if (thread.isFork) {
+                                                        Surface(
+                                                            color = LitterTheme.accent,
+                                                            shape = RoundedCornerShape(4.dp),
+                                                        ) {
+                                                            Text(
+                                                                text = "Fork",
+                                                                color = Color.Black,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Box {
+                                                        IconButton(
+                                                            modifier = Modifier.size(20.dp),
+                                                            onClick = { rowMenuThreadKey = thread.key },
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.MoreVert,
+                                                                contentDescription = "Session actions",
+                                                                tint = LitterTheme.textSecondary,
+                                                                modifier = Modifier.size(14.dp),
+                                                            )
+                                                        }
+                                                        DropdownMenu(
+                                                            expanded = rowMenuThreadKey == thread.key,
+                                                            onDismissRequest = { rowMenuThreadKey = null },
+                                                        ) {
+                                                            DropdownMenuItem(
+                                                                text = { Text("Rename") },
+                                                                onClick = {
+                                                                    renameTargetThread = thread
+                                                                    renameDraft = thread.preview.ifBlank { "Untitled session" }
+                                                                    renameError = null
+                                                                    rowMenuThreadKey = null
+                                                                },
+                                                            )
+                                                            DropdownMenuItem(
+                                                                text = { Text("Fork") },
+                                                                onClick = {
+                                                                    onForkSession(thread.key)
+                                                                    rowMenuThreadKey = null
+                                                                },
+                                                            )
+                                                            DropdownMenuItem(
+                                                                text = { Text("Delete") },
+                                                                onClick = {
+                                                                    archiveTargetThread = thread
+                                                                    rowMenuThreadKey = null
+                                                                },
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                Text(
+                                                    text = sessionMetaLine(thread),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = LitterTheme.textSecondary,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                )
+
+                                                parent?.let {
                                                     Text(
-                                                        text = cwdLeaf(thread.cwd),
+                                                        text = "from ${it.preview.ifBlank { "Untitled session" }}",
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         color = LitterTheme.textMuted,
-                                                        style = MaterialTheme.typography.labelLarge,
+                                                        style = MaterialTheme.typography.labelSmall,
                                                     )
+                                                }
+
+                                                if (thread.cwd.isNotBlank()) {
+                                                    Text(
+                                                        text = thread.cwd,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = LitterTheme.textMuted,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                    )
+                                                }
+
+                                                if (isActive) {
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        SessionLineageChip(
+                                                            title = "Parent",
+                                                            count = if (parent != null) 1 else 0,
+                                                            isInteractive = parent != null,
+                                                            onClick = { parent?.let { onSessionSelected(it.key) } },
+                                                        )
+                                                        SessionLineageChip(
+                                                            title = "Siblings",
+                                                            count = siblings.size,
+                                                            isInteractive = siblings.isNotEmpty(),
+                                                            onClick = { siblings.firstOrNull()?.let { onSessionSelected(it.key) } },
+                                                        )
+                                                        SessionLineageChip(
+                                                            title = "Children",
+                                                            count = children.size,
+                                                            isInteractive = children.isNotEmpty(),
+                                                            onClick = { children.firstOrNull()?.let { onSessionSelected(it.key) } },
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -755,83 +1109,309 @@ private fun SessionSidebar(
             }
         }
     }
+
+    renameTargetThread?.let { thread ->
+        AlertDialog(
+            onDismissRequest = {
+                renameTargetThread = null
+                renameDraft = ""
+                renameError = null
+            },
+            title = { Text("Rename Session") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = renameDraft,
+                        onValueChange = {
+                            renameDraft = it
+                            renameError = null
+                        },
+                        singleLine = true,
+                        label = { Text("Name") },
+                    )
+                    renameError?.let {
+                        Text(
+                            text = it,
+                            color = LitterTheme.danger,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        renameTargetThread = null
+                        renameDraft = ""
+                        renameError = null
+                    },
+                ) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameDraft.trim().isNotEmpty(),
+                    onClick = {
+                        onRenameSession(thread.key, renameDraft) { result ->
+                            result.onFailure { error ->
+                                renameError = error.message ?: "Failed to rename session"
+                            }
+                            result.onSuccess {
+                                renameTargetThread = null
+                                renameDraft = ""
+                                renameError = null
+                            }
+                        }
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+        )
+    }
+
+    archiveTargetThread?.let { thread ->
+        AlertDialog(
+            onDismissRequest = { archiveTargetThread = null },
+            title = { Text("Delete Session") },
+            text = { Text("Remove \"${thread.preview.ifBlank { "Untitled session" }}\" from the sidebar?") },
+            dismissButton = {
+                TextButton(onClick = { archiveTargetThread = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onArchiveSession(thread.key)
+                        archiveTargetThread = null
+                    },
+                ) {
+                    Text("Delete", color = LitterTheme.danger)
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun FolderGroupHeader(
-    folderPath: String,
-    isExpanded: Boolean,
-    canToggle: Boolean,
+private fun WorkspaceSessionGroupHeader(
+    group: WorkspaceSessionGroup,
+    isCollapsed: Boolean,
     onToggle: () -> Unit,
 ) {
-    val folderName = cwdLeaf(folderPath)
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp, bottom = 2.dp)
-                .clickable(enabled = canToggle, onClick = onToggle),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    val sessionCountLabel = if (group.threads.size == 1) "1 session" else "${group.threads.size} sessions"
+    val detailLine =
+        if (group.workspacePath == group.workspaceTitle) {
+            "${group.serverName} • $sessionCountLabel"
+        } else {
+            "${group.serverName} • ${group.workspacePath} • $sessionCountLabel"
+        }
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+        color = LitterTheme.surface.copy(alpha = 0.42f),
+        shape = RoundedCornerShape(7.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border.copy(alpha = 0.55f)),
     ) {
-        Icon(
-            imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = if (isExpanded) "Collapse workspace folder" else "Expand workspace folder",
-            modifier = Modifier.size(14.dp),
-            tint = LitterTheme.textSecondary,
-        )
-        Icon(
-            imageVector = Icons.Default.Folder,
-            contentDescription = null,
-            modifier = Modifier.size(12.dp),
-            tint = LitterTheme.textSecondary,
-        )
-        Text(
-            text = folderName,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = LitterTheme.textSecondary,
-            style = MaterialTheme.typography.labelLarge,
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        if (folderName != folderPath) {
-            Text(
-                text = folderPath,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = LitterTheme.textMuted,
-                style = MaterialTheme.typography.labelSmall,
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                contentDescription = null,
+                tint = LitterTheme.textSecondary,
+                modifier = Modifier.size(14.dp),
             )
+            Icon(
+                imageVector = Icons.Default.Folder,
+                contentDescription = null,
+                tint = LitterTheme.accent,
+                modifier = Modifier.size(13.dp),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = group.workspaceTitle,
+                    color = LitterTheme.textPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = detailLine,
+                    color = LitterTheme.textMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
-private fun matchesSessionSearch(
-    thread: ThreadState,
-    query: String,
-): Boolean {
-    val normalizedQuery = query.lowercase(Locale.ROOT)
-    return thread.preview.lowercase(Locale.ROOT).contains(normalizedQuery) ||
-        thread.cwd.lowercase(Locale.ROOT).contains(normalizedQuery) ||
-        thread.serverName.lowercase(Locale.ROOT).contains(normalizedQuery)
+@Composable
+private fun SessionLineageChip(
+    title: String,
+    count: Int,
+    isInteractive: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(enabled = isInteractive, onClick = onClick),
+        color = LitterTheme.surface.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(5.dp),
+        border =
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isInteractive) LitterTheme.accent.copy(alpha = 0.45f) else LitterTheme.border.copy(alpha = 0.7f),
+            ),
+    ) {
+        Text(
+            text = "$title $count",
+            color = if (isInteractive) LitterTheme.accent else LitterTheme.textMuted,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+        )
+    }
 }
 
-private data class FolderSessionGroup(
-    val folderPath: String,
+@Preview(showBackground = true, backgroundColor = 0xFF000000)
+@Composable
+private fun SessionLineageChipPreview() {
+    LitterAppTheme {
+        SessionLineageChip(
+            title = "Children",
+            count = 3,
+            isInteractive = true,
+            onClick = {},
+        )
+    }
+}
+
+private fun sessionMetaLine(thread: ThreadState): String {
+    val modelLabel = thread.modelProvider.ifBlank { "default" }
+    return "${relativeDate(thread.updatedAtEpochMillis)} • ${thread.serverName} • $modelLabel"
+}
+
+private data class ThreadLineageIndex(
+    val parentByKey: Map<ThreadKey, ThreadState>,
+    val siblingsByKey: Map<ThreadKey, List<ThreadState>>,
+    val childrenByParentKey: Map<ThreadKey, List<ThreadState>>,
+    val searchableTextByKey: Map<ThreadKey, String>,
+)
+
+private fun buildThreadLineageIndex(allThreads: List<ThreadState>): ThreadLineageIndex {
+    val threadByKey =
+        allThreads.associateBy { thread ->
+            thread.key
+        }
+    val childrenByParentKey = LinkedHashMap<ThreadKey, MutableList<ThreadState>>()
+    val parentByKey = LinkedHashMap<ThreadKey, ThreadState>()
+
+    allThreads.forEach { thread ->
+        val parentId = thread.parentThreadId?.trim().orEmpty()
+        if (parentId.isEmpty()) {
+            return@forEach
+        }
+        val parentKey = ThreadKey(serverId = thread.key.serverId, threadId = parentId)
+        val parentThread = threadByKey[parentKey] ?: return@forEach
+        parentByKey[thread.key] = parentThread
+        childrenByParentKey.getOrPut(parentKey) { mutableListOf() }.add(thread)
+    }
+
+    val sortedChildrenByParentKey =
+        childrenByParentKey.mapValues { (_, children) ->
+            children.sortedByDescending { it.updatedAtEpochMillis }
+        }
+
+    val siblingsByKey = LinkedHashMap<ThreadKey, List<ThreadState>>()
+    sortedChildrenByParentKey.values.forEach { siblingsGroup ->
+        if (siblingsGroup.isEmpty()) {
+            return@forEach
+        }
+        siblingsGroup.forEachIndexed { index, thread ->
+            val siblings =
+                if (siblingsGroup.size <= 1) {
+                    emptyList()
+                } else {
+                    buildList(siblingsGroup.size - 1) {
+                        for (siblingIndex in siblingsGroup.indices) {
+                            if (siblingIndex != index) {
+                                add(siblingsGroup[siblingIndex])
+                            }
+                        }
+                    }
+                }
+            siblingsByKey[thread.key] = siblings
+        }
+    }
+
+    val searchableTextByKey =
+        allThreads.associate { thread ->
+            val parentPreview = parentByKey[thread.key]?.preview.orEmpty()
+            thread.key to
+                listOf(
+                    thread.preview,
+                    thread.cwd,
+                    thread.serverName,
+                    thread.modelProvider,
+                    parentPreview,
+                ).joinToString(separator = "\n")
+                    .lowercase(Locale.ROOT)
+        }
+
+    return ThreadLineageIndex(
+        parentByKey = parentByKey,
+        siblingsByKey = siblingsByKey,
+        childrenByParentKey = sortedChildrenByParentKey,
+        searchableTextByKey = searchableTextByKey,
+    )
+}
+
+private fun matchesSessionSearch(
+    thread: ThreadState,
+    normalizedQuery: String,
+    searchableTextByKey: Map<ThreadKey, String>,
+): Boolean {
+    if (normalizedQuery.isBlank()) {
+        return true
+    }
+    return searchableTextByKey[thread.key]?.contains(normalizedQuery) == true
+}
+
+private data class WorkspaceSessionGroup(
+    val id: String,
+    val serverName: String,
+    val workspacePath: String,
+    val workspaceTitle: String,
+    val latestUpdatedAtEpochMillis: Long,
     val threads: List<ThreadState>,
 )
 
-private fun groupSessionsByFolder(threads: List<ThreadState>): List<FolderSessionGroup> {
+private fun groupSessionsByWorkspace(threads: List<ThreadState>): List<WorkspaceSessionGroup> {
     val grouped = LinkedHashMap<String, MutableList<ThreadState>>()
     threads.forEach { thread ->
-        val folderPath = normalizeFolderPath(thread.cwd)
-        grouped.getOrPut(folderPath) { mutableListOf() }.add(thread)
+        val workspacePath = normalizeFolderPath(thread.cwd)
+        val groupId = "${thread.key.serverId}:$workspacePath"
+        grouped.getOrPut(groupId) { mutableListOf() }.add(thread)
     }
-    return grouped.map { (folderPath, groupThreads) ->
-        FolderSessionGroup(folderPath = folderPath, threads = groupThreads)
-    }
+    return grouped
+        .mapNotNull { (groupId, groupThreads) ->
+            val sortedThreads = groupThreads.sortedByDescending { it.updatedAtEpochMillis }
+            val first = sortedThreads.firstOrNull() ?: return@mapNotNull null
+            val workspacePath = normalizeFolderPath(first.cwd)
+            WorkspaceSessionGroup(
+                id = groupId,
+                serverName = first.serverName,
+                workspacePath = workspacePath,
+                workspaceTitle = cwdLeaf(workspacePath),
+                latestUpdatedAtEpochMillis = first.updatedAtEpochMillis,
+                threads = sortedThreads,
+            )
+        }.sortedByDescending { it.latestUpdatedAtEpochMillis }
 }
-
 @Composable
 private fun BrandLogo(
     size: androidx.compose.ui.unit.Dp,
@@ -926,10 +1506,16 @@ private fun ConversationPanel(
     onListExperimentalFeatures: ((Result<List<ExperimentalFeature>>) -> Unit) -> Unit,
     onSetExperimentalFeatureEnabled: (String, Boolean, (Result<Unit>) -> Unit) -> Unit,
     onListSkills: (String?, Boolean, (Result<List<SkillMetadata>>) -> Unit) -> Unit,
-    onSend: (String) -> Unit,
+    onForkConversation: () -> Unit,
+    onEditMessage: (ChatMessage) -> Unit,
+    onForkFromMessage: (ChatMessage) -> Unit,
+    onSend: (String, List<SkillMentionInput>) -> Unit,
     onInterrupt: () -> Unit,
 ) {
+    DebugRecomposeCheckpoint(name = "ConversationPanel")
     val context = LocalContext.current
+    val markdownMarkwon = remember(context) { Markwon.create(context) }
+    val syntaxMarkwon = remember(context) { createSyntaxHighlightMarkwon(context) }
     var attachedImagePath by remember { mutableStateOf<String?>(null) }
     var attachmentError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
@@ -980,7 +1566,14 @@ private fun ConversationPanel(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
         ) {
             items(items = messages, key = { it.id }) { message ->
-                MessageRow(message)
+                MessageRow(
+                    message = message,
+                    markdownMarkwon = markdownMarkwon,
+                    syntaxMarkwon = syntaxMarkwon,
+                    messageActionsEnabled = !isSending,
+                    onEditMessage = onEditMessage,
+                    onForkFromMessage = onForkFromMessage,
+                )
             }
         }
 
@@ -1009,14 +1602,15 @@ private fun ConversationPanel(
             onListExperimentalFeatures = onListExperimentalFeatures,
             onSetExperimentalFeatureEnabled = onSetExperimentalFeatureEnabled,
             onListSkills = onListSkills,
+            onForkConversation = onForkConversation,
             onAttachImage = { attachmentLauncher.launch("image/*") },
             onCaptureImage = { cameraLauncher.launch(null) },
             onClearAttachment = {
                 attachedImagePath = null
                 attachmentError = null
             },
-            onSend = { text ->
-                onSend(encodeDraftWithLocalImageAttachment(text, attachedImagePath))
+            onSend = { text, skillMentions ->
+                onSend(encodeDraftWithLocalImageAttachment(text, attachedImagePath), skillMentions)
                 attachedImagePath = null
                 attachmentError = null
             },
@@ -1026,13 +1620,61 @@ private fun ConversationPanel(
 }
 
 @Composable
-private fun MessageRow(message: ChatMessage) {
+private fun MessageRow(
+    message: ChatMessage,
+    markdownMarkwon: Markwon,
+    syntaxMarkwon: Markwon,
+    messageActionsEnabled: Boolean,
+    onEditMessage: (ChatMessage) -> Unit,
+    onForkFromMessage: (ChatMessage) -> Unit,
+) {
     when (message.role) {
         MessageRole.USER -> {
+            val supportsActions = message.isFromUserTurnBoundary && message.sourceTurnIndex != null
+            var menuExpanded by remember(message.id) { mutableStateOf(false) }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (supportsActions) {
+                    Box {
+                        IconButton(
+                            enabled = messageActionsEnabled,
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Message actions",
+                                tint = if (messageActionsEnabled) LitterTheme.textSecondary else LitterTheme.textMuted,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            containerColor = LitterTheme.surfaceLight,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Edit message", color = LitterTheme.textPrimary) },
+                                enabled = messageActionsEnabled,
+                                onClick = {
+                                    menuExpanded = false
+                                    onEditMessage(message)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Fork from here", color = LitterTheme.textPrimary) },
+                                enabled = messageActionsEnabled,
+                                onClick = {
+                                    menuExpanded = false
+                                    onForkFromMessage(message)
+                                },
+                            )
+                        }
+                    }
+                }
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = LitterTheme.surfaceLight,
@@ -1050,12 +1692,18 @@ private fun MessageRow(message: ChatMessage) {
         MessageRole.ASSISTANT -> {
             MessageMarkdownContent(
                 markdown = message.text,
+                markdownMarkwon = markdownMarkwon,
+                syntaxMarkwon = syntaxMarkwon,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
             )
         }
 
         MessageRole.SYSTEM -> {
-            SystemMessageCard(message = message)
+            SystemMessageCard(
+                message = message,
+                markdownMarkwon = markdownMarkwon,
+                syntaxMarkwon = syntaxMarkwon,
+            )
         }
 
         MessageRole.REASONING -> {
@@ -1084,6 +1732,8 @@ private fun MessageRow(message: ChatMessage) {
 @Composable
 private fun MessageMarkdownContent(
     markdown: String,
+    markdownMarkwon: Markwon,
+    syntaxMarkwon: Markwon,
     modifier: Modifier = Modifier,
     textColor: Color = LitterTheme.textBody,
 ) {
@@ -1094,8 +1744,18 @@ private fun MessageMarkdownContent(
     ) {
         blocks.forEach { block ->
             when (block) {
-                is MarkdownBlock.Text -> InlineMediaMarkdown(markdown = block.markdown, textColor = textColor)
-                is MarkdownBlock.Code -> CodeBlockCard(language = block.language, code = block.code)
+                is MarkdownBlock.Text ->
+                    InlineMediaMarkdown(
+                        markdown = block.markdown,
+                        markdownMarkwon = markdownMarkwon,
+                        textColor = textColor,
+                    )
+                is MarkdownBlock.Code ->
+                    CodeBlockCard(
+                        language = block.language,
+                        code = block.code,
+                        syntaxMarkwon = syntaxMarkwon,
+                    )
             }
         }
     }
@@ -1104,38 +1764,36 @@ private fun MessageMarkdownContent(
 @Composable
 private fun InlineMediaMarkdown(
     markdown: String,
+    markdownMarkwon: Markwon,
     textColor: Color,
 ) {
     val segments = remember(markdown) { extractInlineSegments(markdown) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         segments.forEach { segment ->
             when (segment) {
-                is InlineSegment.Text -> AssistantMarkdownText(markdown = segment.value, textColor = textColor)
+                is InlineSegment.Text ->
+                    AssistantMarkdownText(
+                        markdown = segment.value,
+                        markwon = markdownMarkwon,
+                        textColor = textColor,
+                    )
                 is InlineSegment.ImageBytes -> {
-                    val bitmap =
-                        remember(segment.bytes) {
-                            BitmapFactory.decodeByteArray(segment.bytes, 0, segment.bytes.size)
+                    val bitmap by
+                        produceState<Bitmap?>(initialValue = null, key1 = segment.bytes) {
+                            value =
+                                withContext(Dispatchers.IO) {
+                                    BitmapFactory.decodeByteArray(segment.bytes, 0, segment.bytes.size)
+                                }
                         }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Inline image",
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
+                    InlineBitmapImage(bitmap = bitmap, contentDescription = "Inline image")
                 }
 
                 is InlineSegment.LocalImagePath -> {
-                    val bitmap = remember(segment.path) { BitmapFactory.decodeFile(segment.path) }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Local image",
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
+                    val bitmap by
+                        produceState<Bitmap?>(initialValue = null, key1 = segment.path) {
+                            value = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(segment.path) }
+                        }
+                    InlineBitmapImage(bitmap = bitmap, contentDescription = "Local image")
                 }
             }
         }
@@ -1143,19 +1801,34 @@ private fun InlineMediaMarkdown(
 }
 
 @Composable
+private fun InlineBitmapImage(
+    bitmap: Bitmap?,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    if (bitmap == null) {
+        return
+    }
+    Image(
+        bitmap = bitmap.asImageBitmap(),
+        contentDescription = contentDescription,
+        modifier = modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(8.dp)),
+        contentScale = ContentScale.Fit,
+    )
+}
+
+@Composable
 private fun AssistantMarkdownText(
     markdown: String,
+    markwon: Markwon,
     textColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val markwon = remember(context) { Markwon.create(context) }
-
     AndroidView(
         modifier = modifier,
-        factory = {
-            TextView(it).apply {
-                typeface = Typeface.MONOSPACE
+        factory = { context ->
+            TextView(context).apply {
+                typeface = context.berkeleyMonoTypeface()
                 textSize = 14f
                 setTextColor(textColor.toArgb())
                 setLineSpacing(0f, 1.2f)
@@ -1170,9 +1843,23 @@ private fun AssistantMarkdownText(
 private fun CodeBlockCard(
     language: String,
     code: String,
+    syntaxMarkwon: Markwon,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
+    val markdown =
+        remember(language, code) {
+            buildString {
+                append("```")
+                append(language.trim().ifEmpty { "text" })
+                append("\n")
+                append(code)
+                if (!code.endsWith('\n')) {
+                    append("\n")
+                }
+                append("```")
+            }
+        }
     var copied by remember(code) { mutableStateOf(false) }
     val horizontalScroll = rememberScrollState()
 
@@ -1236,11 +1923,125 @@ private fun CodeBlockCard(
                         .horizontalScroll(horizontalScroll)
                         .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
+                AndroidView(
+                    factory = { context ->
+                        TextView(context).apply {
+                            typeface = context.berkeleyMonoTypeface()
+                            textSize = 12f
+                            setLineSpacing(0f, 1.2f)
+                            setTextColor(LitterTheme.textBody.toArgb())
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setHorizontallyScrolling(true)
+                            setTextIsSelectable(true)
+                        }
+                    },
+                    update = { syntaxMarkwon.setMarkdown(it, markdown) },
+                )
+            }
+        }
+    }
+}
+
+private fun createSyntaxHighlightMarkwon(context: Context): Markwon {
+    val builder = Markwon.builder(context)
+    createPrism4jLocator()?.let { locator ->
+        val prism4j = Prism4j(locator)
+        builder.usePlugin(SyntaxHighlightPlugin.create(prism4j, Prism4jThemeDarkula.create()))
+    }
+    return builder.build()
+}
+
+private fun createPrism4jLocator(): GrammarLocator? {
+    val candidates =
+        listOf(
+            "com.litter.android.ui.Prism4jGrammarLocator",
+            "io.noties.prism4j.bundler.Prism4jGrammarLocator",
+            "io.noties.prism4j.GrammarLocatorDef",
+            "GrammarLocatorDef",
+        )
+    for (candidate in candidates) {
+        val locator =
+            runCatching {
+                Class.forName(candidate).getDeclaredConstructor().newInstance()
+            }.getOrNull()
+        if (locator is GrammarLocator) {
+            return locator
+        }
+    }
+    return null
+}
+
+@Composable
+private fun SystemMessageCard(
+    message: ChatMessage,
+    markdownMarkwon: Markwon,
+    syntaxMarkwon: Markwon,
+) {
+    val parseResult = remember(message.text) { ToolCallMessageParser.parse(message) }
+    when (parseResult) {
+        is ToolCallParseResult.Recognized ->
+            StructuredToolCallCard(
+                messageId = message.id,
+                model = parseResult.model,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+        ToolCallParseResult.Unrecognized ->
+            GenericSystemMessageCard(
+                message = message,
+                markdownMarkwon = markdownMarkwon,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+    }
+}
+
+@Composable
+private fun GenericSystemMessageCard(
+    message: ChatMessage,
+    markdownMarkwon: Markwon,
+    syntaxMarkwon: Markwon,
+) {
+    val (title, body) = remember(message.text) { extractSystemTitleAndBody(message.text) }
+    val displayTitle = title ?: "System"
+    val markdown = if (title == null) message.text else body
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = LitterTheme.surface.copy(alpha = 0.85f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = LitterTheme.accent,
+                    modifier = Modifier.size(16.dp),
+                )
                 Text(
-                    text = code,
-                    color = LitterTheme.textBody,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = displayTitle.uppercase(Locale.US),
+                    color = LitterTheme.accent,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            if (markdown.isNotBlank()) {
+                MessageMarkdownContent(
+                    markdown = markdown,
+                    markdownMarkwon = markdownMarkwon,
+                    syntaxMarkwon = syntaxMarkwon,
+                    modifier = Modifier.fillMaxWidth(),
+                    textColor = LitterTheme.textSystem,
                 )
             }
         }
@@ -1248,12 +2049,17 @@ private fun CodeBlockCard(
 }
 
 @Composable
-private fun SystemMessageCard(message: ChatMessage) {
-    val (title, body) = remember(message.text) { extractSystemTitleAndBody(message.text) }
-    val toolCall = remember(title) { isToolCallTitle(title) }
-    val theme = remember(title) { systemCardTheme(title) }
-    val summary = remember(title, body, toolCall) { compactSystemSummary(title, body, toolCall) }
-    var expanded by remember(message.id) { mutableStateOf(!toolCall) }
+private fun StructuredToolCallCard(
+    messageId: String,
+    model: ToolCallCardModel,
+    syntaxMarkwon: Markwon,
+) {
+    var expanded by remember(messageId, model.defaultExpanded) { mutableStateOf(model.defaultExpanded) }
+    LaunchedEffect(model.status) {
+        if (model.status == ToolCallStatus.FAILED) {
+            expanded = true
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
@@ -1263,59 +2069,289 @@ private fun SystemMessageCard(message: ChatMessage) {
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .let { base ->
-                            if (toolCall) {
-                                base.clickable { expanded = !expanded }
-                            } else {
-                                base
-                            }
-                        },
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(theme.accent),
+                Icon(
+                    imageVector = toolCallKindIcon(model.kind),
+                    contentDescription = null,
+                    tint = toolCallKindAccent(model.kind),
+                    modifier = Modifier.size(16.dp),
                 )
                 Text(
-                    text = summary,
+                    text = model.summary,
                     color = LitterTheme.textSecondary,
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (toolCall) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        tint = LitterTheme.textMuted,
-                        modifier = Modifier.size(16.dp),
-                    )
+                ToolCallStatusChip(status = model.status)
+                if (!model.duration.isNullOrBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = LitterTheme.surfaceLight.copy(alpha = 0.72f),
+                    ) {
+                        Text(
+                            text = model.duration,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = LitterTheme.textSecondary,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = LitterTheme.textMuted,
+                    modifier = Modifier.size(16.dp),
+                )
             }
 
-            if (!toolCall || expanded) {
-                val markdown = if (toolCall) body else message.text
-                if (markdown.isNotBlank()) {
-                    MessageMarkdownContent(
-                        markdown = markdown,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        textColor = LitterTheme.textSystem,
-                    )
+            if (expanded) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    model.sections.forEach { section ->
+                        ToolCallSectionView(
+                            section = section,
+                            syntaxMarkwon = syntaxMarkwon,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun ToolCallStatusChip(status: ToolCallStatus) {
+    val (background, foreground) =
+        when (status) {
+            ToolCallStatus.COMPLETED -> LitterTheme.success.copy(alpha = 0.24f) to LitterTheme.success
+            ToolCallStatus.IN_PROGRESS -> LitterTheme.warning.copy(alpha = 0.24f) to LitterTheme.warning
+            ToolCallStatus.FAILED -> LitterTheme.danger.copy(alpha = 0.24f) to LitterTheme.danger
+            ToolCallStatus.UNKNOWN -> LitterTheme.surfaceLight.copy(alpha = 0.72f) to LitterTheme.textSecondary
+        }
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = background,
+    ) {
+        Text(
+            text = status.label,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+            color = foreground,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun ToolCallSectionView(
+    section: ToolCallSection,
+    syntaxMarkwon: Markwon,
+) {
+    when (section) {
+        is ToolCallSection.KeyValue -> {
+            if (section.entries.isEmpty()) return
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = section.label.uppercase(Locale.US),
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                            color = LitterTheme.surface.copy(alpha = 0.6f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        section.entries.forEach { entry ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = "${entry.key}:",
+                                    color = LitterTheme.textSecondary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                                Text(
+                                    text = entry.value,
+                                    color = LitterTheme.textSystem,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        is ToolCallSection.Code -> {
+            ToolCallCodeLikeSection(
+                label = section.label,
+                language = section.language,
+                content = section.content,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+        }
+
+        is ToolCallSection.Json -> {
+            ToolCallCodeLikeSection(
+                label = section.label,
+                language = "json",
+                content = section.content,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+        }
+
+        is ToolCallSection.Diff -> {
+            ToolCallCodeLikeSection(
+                label = section.label,
+                language = "diff",
+                content = section.content,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+        }
+
+        is ToolCallSection.Text -> {
+            ToolCallCodeLikeSection(
+                label = section.label,
+                language = "text",
+                content = section.content,
+                syntaxMarkwon = syntaxMarkwon,
+            )
+        }
+
+        is ToolCallSection.ListSection -> {
+            if (section.items.isEmpty()) return
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = section.label.uppercase(Locale.US),
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = LitterTheme.surface.copy(alpha = 0.6f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        section.items.forEach { item ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("•", color = LitterTheme.textSecondary, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = item,
+                                    color = LitterTheme.textSystem,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        is ToolCallSection.Progress -> {
+            if (section.items.isEmpty()) return
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = section.label.uppercase(Locale.US),
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = LitterTheme.surface.copy(alpha = 0.6f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        section.items.forEachIndexed { index, item ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .padding(top = 5.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (index == section.items.lastIndex) LitterTheme.warning else LitterTheme.textMuted,
+                                            ),
+                                )
+                                Text(
+                                    text = item,
+                                    color = LitterTheme.textSystem,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolCallCodeLikeSection(
+    label: String,
+    language: String,
+    content: String,
+    syntaxMarkwon: Markwon,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label.uppercase(Locale.US),
+            color = LitterTheme.textSecondary,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        CodeBlockCard(language = language, code = content, syntaxMarkwon = syntaxMarkwon)
+    }
+}
+
+private fun toolCallKindIcon(kind: ToolCallKind) =
+    when (kind) {
+        ToolCallKind.COMMAND_EXECUTION -> Icons.Default.Menu
+        ToolCallKind.COMMAND_OUTPUT -> Icons.Default.Menu
+        ToolCallKind.FILE_CHANGE -> Icons.Default.Folder
+        ToolCallKind.FILE_DIFF -> Icons.Default.Folder
+        ToolCallKind.MCP_TOOL_CALL -> Icons.Default.Settings
+        ToolCallKind.MCP_TOOL_PROGRESS -> Icons.Default.Settings
+        ToolCallKind.WEB_SEARCH -> Icons.Default.ArrowUpward
+        ToolCallKind.COLLABORATION -> Icons.Default.Psychology
+        ToolCallKind.IMAGE_VIEW -> Icons.Default.Image
+    }
+
+private fun toolCallKindAccent(kind: ToolCallKind) =
+    when (kind) {
+        ToolCallKind.COMMAND_EXECUTION, ToolCallKind.COMMAND_OUTPUT -> LitterTheme.toolCallCommand
+        ToolCallKind.FILE_CHANGE -> LitterTheme.toolCallFileChange
+        ToolCallKind.FILE_DIFF -> LitterTheme.toolCallFileDiff
+        ToolCallKind.MCP_TOOL_CALL -> LitterTheme.toolCallMcpCall
+        ToolCallKind.MCP_TOOL_PROGRESS -> LitterTheme.toolCallMcpProgress
+        ToolCallKind.WEB_SEARCH -> LitterTheme.toolCallWebSearch
+        ToolCallKind.COLLABORATION -> LitterTheme.toolCallCollaboration
+        ToolCallKind.IMAGE_VIEW -> LitterTheme.toolCallImage
+    }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1344,12 +2380,14 @@ private fun InputBar(
     onListExperimentalFeatures: ((Result<List<ExperimentalFeature>>) -> Unit) -> Unit,
     onSetExperimentalFeatureEnabled: (String, Boolean, (Result<Unit>) -> Unit) -> Unit,
     onListSkills: (String?, Boolean, (Result<List<SkillMetadata>>) -> Unit) -> Unit,
+    onForkConversation: () -> Unit,
     onAttachImage: () -> Unit,
     onCaptureImage: () -> Unit,
     onClearAttachment: () -> Unit,
-    onSend: (String) -> Unit,
+    onSend: (String, List<SkillMentionInput>) -> Unit,
     onInterrupt: () -> Unit,
 ) {
+    DebugRecomposeCheckpoint(name = "InputBar")
     var composerValue by
         remember {
             mutableStateOf(
@@ -1359,12 +2397,15 @@ private fun InputBar(
                 ),
             )
         }
+    var lastCommittedDraft by remember { mutableStateOf(draft) }
     var showSlashPopup by remember { mutableStateOf(false) }
     var activeSlashToken by remember { mutableStateOf<ComposerSlashQueryContext?>(null) }
     var slashSuggestions by remember { mutableStateOf<List<ComposerSlashCommand>>(emptyList()) }
 
     var showFilePopup by remember { mutableStateOf(false) }
     var activeAtToken by remember { mutableStateOf<ComposerTokenContext?>(null) }
+    var showSkillPopup by remember { mutableStateOf(false) }
+    var activeDollarToken by remember { mutableStateOf<ComposerTokenContext?>(null) }
     var fileSearchLoading by remember { mutableStateOf(false) }
     var fileSearchError by remember { mutableStateOf<String?>(null) }
     var fileSuggestions by remember { mutableStateOf<List<FuzzyFileSearchResult>>(emptyList()) }
@@ -1383,10 +2424,20 @@ private fun InputBar(
     var skills by remember { mutableStateOf<List<SkillMetadata>>(emptyList()) }
     var skillsLoading by remember { mutableStateOf(false) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
+    var mentionSkillPathsByName by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var hasAttemptedSkillMentionLoad by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun commitDraftIfNeeded(nextDraft: String) {
+        if (nextDraft == lastCommittedDraft) {
+            return
+        }
+        onDraftChange(nextDraft)
+        lastCommittedDraft = nextDraft
+    }
 
     fun clearFileSearchState() {
         fileSearchJob?.cancel()
@@ -1403,6 +2454,8 @@ private fun InputBar(
         slashSuggestions = emptyList()
         showFilePopup = false
         activeAtToken = null
+        showSkillPopup = false
+        activeDollarToken = null
         clearFileSearchState()
     }
 
@@ -1438,6 +2491,16 @@ private fun InputBar(
             }
     }
 
+    fun loadSkillsForMentions() {
+        skillsLoading = true
+        onListSkills(currentCwd, false) { result ->
+            skillsLoading = false
+            result.onSuccess { loaded ->
+                skills = loaded.sortedBy { it.name.lowercase(Locale.ROOT) }
+            }
+        }
+    }
+
     fun refreshComposerPopups(nextValue: TextFieldValue) {
         val atToken =
             currentPrefixedToken(
@@ -1450,6 +2513,8 @@ private fun InputBar(
             showSlashPopup = false
             activeSlashToken = null
             slashSuggestions = emptyList()
+            showSkillPopup = false
+            activeDollarToken = null
             showFilePopup = true
             if (activeAtToken != atToken) {
                 activeAtToken = atToken
@@ -1461,6 +2526,31 @@ private fun InputBar(
         activeAtToken = null
         showFilePopup = false
         clearFileSearchState()
+
+        val dollarToken =
+            currentPrefixedToken(
+                text = nextValue.text,
+                cursor = nextValue.selection.start,
+                prefix = '$',
+                allowEmpty = true,
+            )
+        if (dollarToken != null && isMentionQueryValid(dollarToken.value)) {
+            showSlashPopup = false
+            activeSlashToken = null
+            slashSuggestions = emptyList()
+            showSkillPopup = true
+            if (activeDollarToken != dollarToken) {
+                activeDollarToken = dollarToken
+            }
+            if (!hasAttemptedSkillMentionLoad && !skillsLoading) {
+                hasAttemptedSkillMentionLoad = true
+                loadSkillsForMentions()
+            }
+            return
+        }
+
+        showSkillPopup = false
+        activeDollarToken = null
 
         val slashToken =
             currentSlashQueryContext(
@@ -1492,12 +2582,14 @@ private fun InputBar(
         }
     }
 
-    fun loadSkills(forceReload: Boolean = false) {
+    fun loadSkills(forceReload: Boolean = false, showErrors: Boolean = true) {
         skillsLoading = true
         onListSkills(currentCwd, forceReload) { result ->
             skillsLoading = false
             result.onFailure { error ->
-                slashErrorMessage = error.message ?: "Failed to load skills"
+                if (showErrors) {
+                    slashErrorMessage = error.message ?: "Failed to load skills"
+                }
             }
             result.onSuccess { loaded ->
                 skills = loaded.sortedBy { it.name.lowercase(Locale.ROOT) }
@@ -1554,6 +2646,10 @@ private fun InputBar(
                 onOpenNewSessionPicker()
             }
 
+            ComposerSlashCommand.FORK -> {
+                onForkConversation()
+            }
+
             ComposerSlashCommand.RESUME -> {
                 onOpenSidebar()
             }
@@ -1562,7 +2658,7 @@ private fun InputBar(
 
     fun applySlashSuggestion(command: ComposerSlashCommand) {
         composerValue = TextFieldValue(text = "", selection = TextRange(0))
-        onDraftChange("")
+        commitDraftIfNeeded("")
         hideComposerPopups()
         executeSlashCommand(command, args = null)
     }
@@ -1584,18 +2680,88 @@ private fun InputBar(
             )
         val nextCursor = token.range.start + replacement.length
         composerValue = TextFieldValue(text = updatedText, selection = TextRange(nextCursor))
-        onDraftChange(updatedText)
+        commitDraftIfNeeded(updatedText)
         showFilePopup = false
         activeAtToken = null
         clearFileSearchState()
     }
 
+    fun applySkillSuggestion(skill: SkillMetadata) {
+        val token = activeDollarToken ?: return
+        val replacement = "\$${skill.name} "
+        val updatedText =
+            composerValue.text.replaceRange(
+                startIndex = token.range.start,
+                endIndex = token.range.end,
+                replacement = replacement,
+            )
+        val nextCursor = token.range.start + replacement.length
+        composerValue = TextFieldValue(text = updatedText, selection = TextRange(nextCursor))
+        commitDraftIfNeeded(updatedText)
+        mentionSkillPathsByName =
+            mentionSkillPathsByName + mapOf(skill.name.lowercase(Locale.ROOT) to skill.path)
+        showSkillPopup = false
+        activeDollarToken = null
+    }
+
+    fun collectSkillMentionsForSubmission(text: String): List<SkillMentionInput> {
+        if (skills.isEmpty()) {
+            return emptyList()
+        }
+        val mentionNames = extractMentionNames(text)
+        if (mentionNames.isEmpty()) {
+            return emptyList()
+        }
+
+        val skillsByName = skills.groupBy { it.name.lowercase(Locale.ROOT) }
+        val seenPaths = HashSet<String>()
+        val resolved = ArrayList<SkillMentionInput>()
+        for (name in mentionNames) {
+            val normalizedName = name.lowercase(Locale.ROOT)
+            val selectedPath = mentionSkillPathsByName[normalizedName]
+            if (!selectedPath.isNullOrBlank()) {
+                if (seenPaths.add(selectedPath)) {
+                    val canonicalName = skills.firstOrNull { it.path == selectedPath }?.name ?: name
+                    resolved += SkillMentionInput(name = canonicalName, path = selectedPath)
+                }
+                continue
+            }
+
+            val candidates = skillsByName[normalizedName] ?: continue
+            if (candidates.size != 1) {
+                continue
+            }
+            val match = candidates.first()
+            if (seenPaths.add(match.path)) {
+                resolved += SkillMentionInput(name = match.name, path = match.path)
+            }
+        }
+        return resolved
+    }
+
+    val skillSuggestions: List<SkillMetadata> =
+        remember(activeDollarToken, skills) {
+            val token = activeDollarToken ?: return@remember emptyList()
+            filterSkillSuggestions(skills, token.value)
+        }
+
     LaunchedEffect(draft) {
-        if (draft != composerValue.text) {
+        if (draft != lastCommittedDraft) {
+            lastCommittedDraft = draft
+        }
+        if (draft != composerValue.text && draft == lastCommittedDraft) {
             val cursor = composerValue.selection.start.coerceIn(0, draft.length)
             val synced = TextFieldValue(text = draft, selection = TextRange(cursor))
             composerValue = synced
             refreshComposerPopups(synced)
+        }
+    }
+
+    LaunchedEffect(composerValue.text) {
+        val pendingDraft = composerValue.text
+        delay(180L)
+        if (pendingDraft == composerValue.text) {
+            commitDraftIfNeeded(pendingDraft)
         }
     }
 
@@ -2002,7 +3168,7 @@ private fun InputBar(
                             ) {
                                 Text(
                                     text = "/${command.rawValue}",
-                                    color = Color(0xFF6EA676),
+                                    color = LitterTheme.success,
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                                 Text(
@@ -2095,6 +3261,69 @@ private fun InputBar(
                 }
             }
 
+            if (showSkillPopup) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = LitterTheme.surfaceLight.copy(alpha = 0.98f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                ) {
+                    when {
+                        skillsLoading && skillSuggestions.isEmpty() -> {
+                            Text(
+                                text = "Loading skills...",
+                                color = LitterTheme.textSecondary,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                            )
+                        }
+
+                        skillSuggestions.isEmpty() -> {
+                            Text(
+                                text = "No skills found",
+                                color = LitterTheme.textSecondary,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                            )
+                        }
+
+                        else -> {
+                            val visibleSuggestions = skillSuggestions.take(8)
+                            Column {
+                                visibleSuggestions.forEachIndexed { index, skill ->
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clickable { applySkillSuggestion(skill) }
+                                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "\$${skill.name}",
+                                            color = LitterTheme.success,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        Text(
+                                            text = skill.description,
+                                            color = LitterTheme.textSecondary,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    if (index < visibleSuggestions.lastIndex) {
+                                        HorizontalDivider(color = LitterTheme.border, thickness = 0.5.dp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(26.dp),
@@ -2167,7 +3396,6 @@ private fun InputBar(
                         value = composerValue,
                         onValueChange = { nextValue ->
                             composerValue = nextValue
-                            onDraftChange(nextValue.text)
                             refreshComposerPopups(nextValue)
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -2208,7 +3436,7 @@ private fun InputBar(
                                     val invocation = parseSlashCommandInvocation(trimmed)
                                     if (invocation != null) {
                                         composerValue = TextFieldValue(text = "", selection = TextRange(0))
-                                        onDraftChange("")
+                                        commitDraftIfNeeded("")
                                         hideComposerPopups()
                                         focusManager.clearFocus(force = true)
                                         keyboardController?.hide()
@@ -2218,7 +3446,9 @@ private fun InputBar(
                                 }
                                 focusManager.clearFocus(force = true)
                                 keyboardController?.hide()
-                                onSend(composerValue.text)
+                                commitDraftIfNeeded(composerValue.text)
+                                val skillMentions = collectSkillMentionsForSubmission(composerValue.text)
+                                onSend(composerValue.text, skillMentions)
                                 hideComposerPopups()
                             },
                         contentAlignment = Alignment.Center,
@@ -2250,6 +3480,7 @@ private enum class ComposerSlashCommand(
     REVIEW(rawValue = "review", description = "review my current changes and find issues"),
     RENAME(rawValue = "rename", description = "rename the current thread"),
     NEW(rawValue = "new", description = "start a new chat during a conversation"),
+    FORK(rawValue = "fork", description = "fork the current conversation into a new session"),
     RESUME(rawValue = "resume", description = "resume a saved chat"),
 
     ;
@@ -2345,6 +3576,72 @@ private fun fuzzyScore(
         candidateIndex += 1
     }
     return if (queryIndex == normalizedQuery.length) score else null
+}
+
+private fun filterSkillSuggestions(
+    skills: List<SkillMetadata>,
+    query: String,
+): List<SkillMetadata> {
+    if (skills.isEmpty()) {
+        return emptyList()
+    }
+    if (query.isBlank()) {
+        return skills.sortedBy { it.name.lowercase(Locale.ROOT) }
+    }
+
+    return skills
+        .mapNotNull { skill ->
+            val scoreFromName = fuzzyScore(candidate = skill.name, query = query)
+            val scoreFromDescription = fuzzyScore(candidate = skill.description, query = query)
+            val score = maxOf(scoreFromName ?: Int.MIN_VALUE, scoreFromDescription ?: Int.MIN_VALUE)
+            if (score == Int.MIN_VALUE) {
+                null
+            } else {
+                skill to score
+            }
+        }
+        .sortedWith(
+            compareByDescending<Pair<SkillMetadata, Int>> { it.second }
+                .thenBy { it.first.name.lowercase(Locale.ROOT) },
+        )
+        .map { it.first }
+}
+
+private fun isMentionNameChar(char: Char): Boolean = char.isLetterOrDigit() || char == '_' || char == '-'
+
+private fun isMentionQueryValid(query: String): Boolean = query.all(::isMentionNameChar)
+
+private fun extractMentionNames(text: String): List<String> {
+    if (text.isEmpty()) {
+        return emptyList()
+    }
+
+    val mentions = ArrayList<String>()
+    var index = 0
+    while (index < text.length) {
+        if (text[index] != '$') {
+            index += 1
+            continue
+        }
+        if (index > 0 && isMentionNameChar(text[index - 1])) {
+            index += 1
+            continue
+        }
+
+        val nameStart = index + 1
+        if (nameStart >= text.length || !isMentionNameChar(text[nameStart])) {
+            index += 1
+            continue
+        }
+
+        var nameEnd = nameStart + 1
+        while (nameEnd < text.length && isMentionNameChar(text[nameEnd])) {
+            nameEnd += 1
+        }
+        mentions += text.substring(nameStart, nameEnd)
+        index = nameEnd
+    }
+    return mentions
 }
 
 private fun parseSlashCommandInvocation(text: String): ComposerSlashInvocation? {
@@ -2458,10 +3755,6 @@ private fun tokenRangeAroundCursor(
     }
     return TextRange(start, end)
 }
-
-private data class SystemCardTheme(
-    val accent: Color,
-)
 
 private sealed interface MarkdownBlock {
     data class Text(
@@ -2646,116 +3939,6 @@ private fun extractSystemTitleAndBody(text: String): Pair<String?, String> {
     return title to body
 }
 
-private fun isToolCallTitle(title: String?): Boolean {
-    val lower = title?.lowercase().orEmpty()
-    return lower.contains("command") ||
-        lower.contains("file") ||
-        lower.contains("mcp") ||
-        lower.contains("web") ||
-        lower.contains("collab") ||
-        lower.contains("image")
-}
-
-private fun compactSystemSummary(
-    title: String?,
-    body: String,
-    toolCall: Boolean,
-): String {
-    if (!toolCall) {
-        return title ?: "System"
-    }
-
-    val lower = title?.lowercase().orEmpty()
-    val lines = body.lines().map { it.trim() }
-
-    if (lower.contains("command")) {
-        val commandStart = lines.indexOfFirst { it.startsWith("Command:") }
-        if (commandStart >= 0 && commandStart + 2 < lines.size) {
-            val raw = lines[commandStart + 2]
-            val command =
-                raw
-                    .replace("/bin/zsh -lc '", "")
-                    .replace("/bin/bash -lc '", "")
-                    .removeSuffix("'")
-                    .trim()
-            val status =
-                lines
-                    .firstOrNull { it.startsWith("Status:") }
-                    ?.removePrefix("Status:")
-                    ?.trim()
-                    .orEmpty()
-            val duration =
-                lines
-                    .firstOrNull { it.startsWith("Duration:") }
-                    ?.removePrefix("Duration:")
-                    ?.trim()
-                    .orEmpty()
-            val statusSuffix =
-                when {
-                    status == "completed" -> " ✓"
-                    status.isNotEmpty() -> " ($status)"
-                    else -> ""
-                }
-            val durationSuffix = if (duration.isNotEmpty()) " $duration" else ""
-            return "$command$statusSuffix$durationSuffix".trim()
-        }
-    }
-
-    if (lower.contains("file")) {
-        val paths = lines.filter { it.startsWith("Path: ") }.map { it.removePrefix("Path: ").trim() }
-        if (paths.isNotEmpty()) {
-            val first = paths.first().substringAfterLast('/').ifBlank { paths.first() }
-            if (paths.size > 1) {
-                return "$first +${paths.size - 1} files"
-            }
-            return first
-        }
-    }
-
-    if (lower.contains("mcp")) {
-        val tool = lines.firstOrNull { it.startsWith("Tool: ") }?.removePrefix("Tool: ")?.trim()
-        val status = lines.firstOrNull { it.startsWith("Status: ") }?.removePrefix("Status: ")?.trim()
-        if (!tool.isNullOrBlank()) {
-            if (status == "completed") {
-                return "$tool ✓"
-            }
-            if (!status.isNullOrBlank()) {
-                return "$tool ($status)"
-            }
-            return tool
-        }
-    }
-
-    if (lower.contains("web")) {
-        val query = lines.firstOrNull { it.startsWith("Query: ") }?.removePrefix("Query: ")?.trim()
-        if (!query.isNullOrBlank()) {
-            return query
-        }
-    }
-
-    if (lower.contains("image")) {
-        val path = lines.firstOrNull { it.startsWith("Path: ") }?.removePrefix("Path: ")?.trim()
-        if (!path.isNullOrBlank()) {
-            return path.substringAfterLast('/').ifBlank { path }
-        }
-    }
-
-    return title ?: "Tool Call"
-}
-
-private fun systemCardTheme(title: String?): SystemCardTheme {
-    val lower = title?.lowercase().orEmpty()
-    return when {
-        lower.contains("command") -> SystemCardTheme(accent = Color(0xFFC7B072))
-        lower.contains("file") -> SystemCardTheme(accent = Color(0xFF7CAFD9))
-        lower.contains("mcp") -> SystemCardTheme(accent = Color(0xFFC797D8))
-        lower.contains("web") -> SystemCardTheme(accent = Color(0xFF88C6C7))
-        lower.contains("collab") -> SystemCardTheme(accent = Color(0xFF9BCF8E))
-        lower.contains("image") -> SystemCardTheme(accent = Color(0xFFE3A66F))
-        else -> SystemCardTheme(accent = LitterTheme.accent)
-    }
-}
-
 private fun encodeDraftWithLocalImageAttachment(
     draft: String,
     localImagePath: String?,
@@ -2824,6 +4007,7 @@ private fun DirectoryPickerSheet(
     selectedServerId: String?,
     path: String,
     entries: List<String>,
+    recentDirectories: List<RecentDirectoryUiState>,
     isLoading: Boolean,
     error: String?,
     searchQuery: String,
@@ -2834,12 +4018,20 @@ private fun DirectoryPickerSheet(
     onShowHiddenDirectoriesChange: (Boolean) -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateInto: (String) -> Unit,
+    onNavigateToPath: (String) -> Unit,
     onSelect: () -> Unit,
+    onSelectRecent: (String) -> Unit,
+    onRemoveRecentDirectory: (String) -> Unit,
+    onClearRecentDirectories: () -> Unit,
+    onRetry: () -> Unit,
 ) {
-    var serverMenuExpanded by remember { mutableStateOf(false) }
+    DebugRecomposeCheckpoint(name = "DirectoryPickerSheet")
+    var serverMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var recentsMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var showClearRecentsConfirmation by rememberSaveable { mutableStateOf(false) }
     val selectedServer = connectedServers.firstOrNull { it.id == selectedServerId }
-    val selectedServerLabel =
-        selectedServer?.let { "${it.name} * ${serverSourceLabel(it.source)}" } ?: "Select server"
+    val selectedServerLabel = selectedServer?.let { "${it.name} • ${serverSourceLabel(it.source)}" } ?: stringResource(R.string.directory_picker_select_server)
+    val selectedPath = path.ifBlank { "/" }
     val trimmedQuery = searchQuery.trim()
     val visibleEntries =
         remember(entries, trimmedQuery, showHiddenDirectories) {
@@ -2852,36 +4044,73 @@ private fun DirectoryPickerSheet(
         }
     val emptyMessage =
         if (trimmedQuery.isEmpty()) {
-            "No subdirectories"
+            stringResource(R.string.directory_picker_no_subdirectories)
         } else {
-            "No matches for \"$trimmedQuery\""
+            stringResource(R.string.directory_picker_no_matches, trimmedQuery)
         }
+    val showRecentDirectories = trimmedQuery.isEmpty() && recentDirectories.isNotEmpty()
+    val canSelect = selectedServer != null && selectedPath.isNotBlank() && !isLoading
+    val canGoUp = selectedServer != null && selectedPath != "/"
+    val continueRecent = remember(recentDirectories, trimmedQuery) { recentDirectories.firstOrNull()?.takeIf { trimmedQuery.isEmpty() } }
+    val selectPathLabel =
+        remember(selectedPath) {
+            if (selectedPath.length <= 46) {
+                selectedPath
+            } else {
+                "…${selectedPath.takeLast(45)}"
+            }
+        }
+    val pathSegments = remember(selectedPath) { directoryPathSegments(selectedPath) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    BackHandler(enabled = true) {
+        if (canGoUp) {
+            onNavigateUp()
+        } else {
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Choose Directory", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.directory_picker_title), style = MaterialTheme.typography.titleMedium)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Server", color = LitterTheme.textSecondary, style = MaterialTheme.typography.labelLarge)
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = LitterTheme.surface.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                ) {
+                    Text(
+                        text = stringResource(R.string.directory_picker_connected_server, selectedServerLabel),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = LitterTheme.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Box {
-                    OutlinedButton(
+                    TextButton(
                         onClick = { serverMenuExpanded = true },
                         enabled = connectedServers.isNotEmpty(),
                     ) {
-                        Text(
-                            selectedServerLabel,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Text(stringResource(R.string.directory_picker_change_server))
                     }
                     DropdownMenu(
                         expanded = serverMenuExpanded,
@@ -2891,7 +4120,7 @@ private fun DirectoryPickerSheet(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "${server.name} * ${serverSourceLabel(server.source)}",
+                                        "${server.name} • ${serverSourceLabel(server.source)}",
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -2905,31 +4134,12 @@ private fun DirectoryPickerSheet(
                     }
                 }
             }
-            Text(path.ifBlank { "/" }, color = LitterTheme.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-
-            val canSelect = selectedServer != null && path.isNotBlank() && !isLoading
-            val canGoUp = selectedServer != null && path.isNotBlank()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onNavigateUp, enabled = canGoUp) {
-                    Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Up")
-                }
-                Button(onClick = onSelect, enabled = canSelect) {
-                    Text("Select")
-                }
-                TextButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Cancel")
-                }
-            }
 
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search folders") },
+                placeholder = { Text(stringResource(R.string.directory_picker_search_folders)) },
                 singleLine = true,
             )
 
@@ -2944,49 +4154,336 @@ private fun DirectoryPickerSheet(
                         onShowHiddenDirectoriesChange(checked)
                     },
                 )
-                Text("Show hidden folders", color = LitterTheme.textSecondary)
+                Text(
+                    text = stringResource(R.string.directory_picker_show_hidden_folders),
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
 
-            when {
-                isLoading -> {
-                    Text("Loading...", color = LitterTheme.textMuted)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onNavigateUp,
+                    enabled = canGoUp,
+                ) {
+                    Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.directory_picker_up_one_level))
                 }
-
-                error != null -> {
-                    Text(error, color = LitterTheme.danger)
-                }
-
-                visibleEntries.isEmpty() -> {
-                    Text(emptyMessage, color = LitterTheme.textMuted)
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.55f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                pathSegments.forEach { segment ->
+                    Surface(
+                        modifier = Modifier.clickable { onNavigateToPath(segment.path) },
+                        color = if (segment.path == selectedPath) LitterTheme.surfaceLight else LitterTheme.surface.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (segment.path == selectedPath) LitterTheme.accent else LitterTheme.border),
                     ) {
-                        items(visibleEntries, key = { it }) { entry ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth().clickable { onNavigateInto(entry) },
-                                color = LitterTheme.surface.copy(alpha = 0.6f),
-                                shape = RoundedCornerShape(8.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(Icons.Default.Folder, contentDescription = null, tint = LitterTheme.textSecondary)
-                                    Text(entry, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = segment.label,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                color = LitterTheme.surface.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+            ) {
+                when {
+                    isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.directory_picker_loading),
+                                color = LitterTheme.textMuted,
+                            )
+                        }
+                    }
+
+                    error != null -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.directory_picker_load_error),
+                                color = LitterTheme.danger,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = error,
+                                color = LitterTheme.textSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = onRetry) {
+                                    Text(stringResource(R.string.directory_picker_retry))
+                                }
+                                TextButton(onClick = { serverMenuExpanded = true }) {
+                                    Text(stringResource(R.string.directory_picker_change_server))
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            continueRecent?.let { recent ->
+                                item(key = "continue-recent") {
+                                    Button(
+                                        onClick = { onSelectRecent(recent.path) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.directory_picker_continue_in_folder, cwdLeaf(recent.path)),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (showRecentDirectories) {
+                                item(key = "recents-header") {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.directory_picker_recent_directories),
+                                            color = LitterTheme.textSecondary,
+                                            style = MaterialTheme.typography.labelLarge,
+                                        )
+                                        Box {
+                                            IconButton(onClick = { recentsMenuExpanded = true }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = null, tint = LitterTheme.textSecondary)
+                                            }
+                                            DropdownMenu(
+                                                expanded = recentsMenuExpanded,
+                                                onDismissRequest = { recentsMenuExpanded = false },
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.directory_picker_clear_recent_directories)) },
+                                                    onClick = {
+                                                        recentsMenuExpanded = false
+                                                        showClearRecentsConfirmation = true
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                items(recentDirectories, key = { "recent-${it.path}" }) { recent ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth().clickable { onSelectRecent(recent.path) },
+                                        color = LitterTheme.surfaceLight.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Folder,
+                                                contentDescription = null,
+                                                tint = LitterTheme.textSecondary,
+                                            )
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                            ) {
+                                                Text(
+                                                    recent.path,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                                val relativeDate =
+                                                    DateUtils
+                                                        .getRelativeTimeSpanString(
+                                                            recent.lastUsedAtEpochMillis,
+                                                            System.currentTimeMillis(),
+                                                            DateUtils.MINUTE_IN_MILLIS,
+                                                        ).toString()
+                                                Text(
+                                                    "$relativeDate • ${recent.useCount} uses",
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = LitterTheme.textSecondary,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                )
+                                            }
+                                            IconButton(onClick = { onRemoveRecentDirectory(recent.path) }) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = stringResource(R.string.directory_picker_remove_recent),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (canGoUp) {
+                                item(key = "up") {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateUp),
+                                        color = LitterTheme.surface.copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = LitterTheme.textSecondary)
+                                            Text(
+                                                text = stringResource(R.string.directory_picker_up_one_level),
+                                                color = LitterTheme.textSecondary,
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (visibleEntries.isEmpty()) {
+                                item(key = "empty") {
+                                    Text(
+                                        text = emptyMessage,
+                                        color = LitterTheme.textMuted,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+                                    )
+                                }
+                            } else {
+                                items(visibleEntries, key = { it }) { entry ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth().clickable { onNavigateInto(entry) },
+                                        color = LitterTheme.surface.copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(Icons.Default.Folder, contentDescription = null, tint = LitterTheme.textSecondary)
+                                            Text(entry, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (!canSelect) {
+                    Text(
+                        text = stringResource(R.string.directory_picker_choose_folder_helper),
+                        color = LitterTheme.textSecondary,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                Button(
+                    onClick = onSelect,
+                    enabled = canSelect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text =
+                            if (canSelect) {
+                                stringResource(R.string.directory_picker_select_folder_path, selectPathLabel)
+                            } else {
+                                stringResource(R.string.directory_picker_select_folder)
+                            },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(stringResource(R.string.directory_picker_cancel))
+                }
+            }
         }
     }
+
+    if (showClearRecentsConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearRecentsConfirmation = false },
+            title = { Text(stringResource(R.string.directory_picker_clear_recent_title)) },
+            text = { Text(stringResource(R.string.directory_picker_clear_recent_message)) },
+            dismissButton = {
+                TextButton(onClick = { showClearRecentsConfirmation = false }) {
+                    Text(stringResource(R.string.directory_picker_cancel))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearRecentsConfirmation = false
+                        onClearRecentDirectories()
+                    },
+                ) {
+                    Text(stringResource(R.string.directory_picker_clear))
+                }
+            },
+        )
+    }
+}
+
+private data class DirectoryPathSegment(
+    val label: String,
+    val path: String,
+)
+
+private fun directoryPathSegments(path: String): List<DirectoryPathSegment> {
+    val normalized = path.trim().ifEmpty { "/" }
+    if (normalized == "/") {
+        return listOf(DirectoryPathSegment(label = "/", path = "/"))
+    }
+    val segments = mutableListOf(DirectoryPathSegment(label = "/", path = "/"))
+    var runningPath = ""
+    normalized
+        .trim('/')
+        .split('/')
+        .filter { it.isNotBlank() }
+        .forEach { segment ->
+            runningPath = if (runningPath.isEmpty()) "/$segment" else "$runningPath/$segment"
+            segments += DirectoryPathSegment(label = segment, path = runningPath)
+        }
+    return segments
 }
 
 private enum class ManualField {
@@ -3937,7 +5434,7 @@ private fun relativeDate(timestamp: Long): String {
 private fun accountStatusColor(status: AuthStatus): Color =
     when (status) {
         AuthStatus.CHATGPT -> LitterTheme.accent
-        AuthStatus.API_KEY -> Color(0xFF00AAFF)
+        AuthStatus.API_KEY -> LitterTheme.info
         AuthStatus.NOT_LOGGED_IN -> LitterTheme.textMuted
         AuthStatus.UNKNOWN -> LitterTheme.textMuted
     }

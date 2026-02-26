@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.kapt")
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
 }
 
@@ -78,6 +79,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:syntax-highlight:4.6.2") {
+        exclude(group = "org.jetbrains", module = "annotations-java5")
+    }
+    implementation("io.noties:prism4j:2.0.0") {
+        exclude(group = "org.jetbrains", module = "annotations-java5")
+    }
+    kapt("io.noties:prism4j-bundler:2.0.0")
     implementation("com.github.mwiede:jsch:0.2.22")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
