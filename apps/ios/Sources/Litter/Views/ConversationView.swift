@@ -188,19 +188,22 @@ private struct ConversationMessageList: View {
                             if case .thinking = threadStatus {
                                 TypingIndicator()
                             }
-                            Color.clear
-                                .frame(height: 1)
-                                .background(
-                                    GeometryReader { geo in
-                                        Color.clear.preference(
-                                            key: BottomMarkerMaxYPreferenceKey.self,
-                                            value: geo.frame(in: .named("conversationScrollArea")).maxY
-                                        )
-                                    }
-                                )
-                                .id("bottom")
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        Color.clear
+                            .frame(height: 1)
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: BottomMarkerMaxYPreferenceKey.self,
+                                        value: geo.frame(in: .named("conversationScrollArea")).maxY
+                                    )
+                                }
+                            )
+                            .id("bottom")
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
                     }
                     .coordinateSpace(name: "conversationScrollArea")
                     .scrollDismissesKeyboard(.interactively)
