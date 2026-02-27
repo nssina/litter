@@ -23,7 +23,7 @@ require_tool() {
 require_tool curl
 require_tool npm
 require_tool tar
-require_tool bsdtar
+require_tool ar
 
 NODEJS_INDEX_URL="https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/"
 NODEJS_DEB_NAME="$(
@@ -102,7 +102,7 @@ if [[ ! -f "$ASSETS_DIR/bin/node" || "$existing_node_package" != "$NODEJS_PACKAG
     trap 'rm -rf "$TMP_NODE_DIR"' EXIT
     pushd "$TMP_NODE_DIR" >/dev/null
     curl -fL --retry 3 --retry-delay 1 "$NODEJS_PACKAGE_URL" -o nodejs.deb
-    bsdtar -xf nodejs.deb
+    ar x nodejs.deb
     tar -xJf data.tar.xz "./data/data/com.termux/files/usr/bin/node"
     cp "./data/data/com.termux/files/usr/bin/node" "$ASSETS_DIR/bin/node"
     popd >/dev/null
