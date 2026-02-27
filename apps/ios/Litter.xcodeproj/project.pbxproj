@@ -16,6 +16,7 @@
 		0C8911DDC605F71148FC7E29 /* ToolCallMessageParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293EF15BAE7362AAF480EC4A /* ToolCallMessageParser.swift */; };
 		0CF8F35C0BAB5AB811C2809F /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817117A5E16EBD02388DBBE1 /* HeaderView.swift */; };
 		0D4116209C36B23F964BC070 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FE71A015A197F8B7F6AE82B8 /* Security.framework */; };
+		15378E713092362B622ADF95 /* BerkeleyMono-Bold-Oblique.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3CB07F43FD670F05B9A43C55 /* BerkeleyMono-Bold-Oblique.otf */; };
 		176D9DB2C19A759EE50DFE57 /* ChatTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E05AE5CC346C8D2ED2FED /* ChatTypes.swift */; };
 		178E05A70211238A1D49F6C2 /* ToolCallMessageParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B00D3C4EBCC298CE54D2D02 /* ToolCallMessageParserTests.swift */; };
 		18B902823723C15E3437C4BD /* ios_system.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0A9C36495A1AD0AC9AC6DBA4 /* ios_system.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -24,6 +25,7 @@
 		1B27B62916B4D6AF66BDA9F8 /* SSHLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A9876F2929290D47ED57D77 /* SSHLoginSheet.swift */; };
 		1DB21F6FFA11CE197FCFDBD5 /* shell.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 874C6CFBD438D4B4909DD1CF /* shell.xcframework */; };
 		1DBECB5F40FE8322F20A327F /* ServerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73840201673E0D1EE9E9DEBF /* ServerConnection.swift */; };
+		2079821AAFA0AB0D5D4E429C /* BerkeleyMono-Oblique.otf in Resources */ = {isa = PBXBuildFile; fileRef = ACD06DF72574CDDF16E1E41B /* BerkeleyMono-Oblique.otf */; };
 		20AD8AEA4E06442319C65002 /* text.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CECEF29277C1DB1AD1EF304D /* text.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		28534FD8D729C47A8EF1A670 /* ToolCallMessageParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293EF15BAE7362AAF480EC4A /* ToolCallMessageParser.swift */; };
 		2A1E623523793810458A4631 /* text.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CECEF29277C1DB1AD1EF304D /* text.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -50,6 +52,7 @@
 		5342E9DEE1FB318F01E27F7E /* ChatTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E05AE5CC346C8D2ED2FED /* ChatTypes.swift */; };
 		536EF112EA2B3405B03B0BB6 /* commandDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 545E3E3890AFDE088424F0C1 /* commandDictionary.plist */; };
 		56DBF9B40EDB38539AD3F363 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1959956ABBEC98793B97B468 /* MessageBubbleView.swift */; };
+		591F49598442E387E16C7BF2 /* BerkeleyMono-Oblique.otf in Resources */ = {isa = PBXBuildFile; fileRef = ACD06DF72574CDDF16E1E41B /* BerkeleyMono-Oblique.otf */; };
 		5AB1046D51A1A192F1952893 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF245554F39E59E68B72EB22 /* ConversationView.swift */; };
 		5D69A8BA80D3B1B771C94DC0 /* OnDeviceCodexFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93677A51659C08505EA4CE10 /* OnDeviceCodexFeature.swift */; };
 		5F1228C0BD5FC2E520010A2C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE8C3705FCC98F7E1642771 /* SettingsView.swift */; };
@@ -84,11 +87,13 @@
 		A0C4E239663FE86E4260A374 /* files.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 19CB61EDE7B1FF0CF2EC81BB /* files.xcframework */; };
 		A0F302E6D893FB45DB4E16CB /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = ABFE016B445D1A4398CFE2A5 /* Localizable.strings */; };
 		A4F87BB29FFEA30C60E99889 /* shell.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 874C6CFBD438D4B4909DD1CF /* shell.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		AB436317C3932EE211111561 /* BerkeleyMono-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3BD63CCD80D9E1F66879EF97 /* BerkeleyMono-Bold.otf */; };
 		ACB4703CB129ED8B32E9F291 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034CE02FECF86AB9EC0842D0 /* DiscoveryView.swift */; };
 		ADA061B4E1F520DB54601B39 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818BC73F3855A9BA29C8E868 /* AccountView.swift */; };
 		AF67583A782E05448A75AFC7 /* SSHSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754A6F0D26DFBE19A8C6625F /* SSHSessionManager.swift */; };
 		B2AD11FCB018EFE781CE172F /* CodexBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94787AD35DEC95D38907632B /* CodexBridge.swift */; };
 		B977A1C7C1FF67CCC0B25AEE /* CodexProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2C91E2BA1A8F93DA7FF4EF /* CodexProtocol.swift */; };
+		BAB0343536C6CFD8EF952DE0 /* BerkeleyMono-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = B0648D501D363553E86BAE63 /* BerkeleyMono-Regular.otf */; };
 		BDD00F77D6868A0501810E51 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 35949923355BB19A7209FD65 /* Assets.xcassets */; };
 		BEE15B569CF1A1D7F73F25F9 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034CE02FECF86AB9EC0842D0 /* DiscoveryView.swift */; };
 		C07B1499364228CD0094A4DB /* ios_system.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0A9C36495A1AD0AC9AC6DBA4 /* ios_system.xcframework */; };
@@ -101,10 +106,12 @@
 		CD03B7391871A06D022D42BA /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817117A5E16EBD02388DBBE1 /* HeaderView.swift */; };
 		CDE88674C0C5A1B4C801267E /* ConnectionTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4925417F70C546B80DBD9EFF /* ConnectionTarget.swift */; };
 		CFA5E4B56537F480AFECC903 /* DirectoryPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318F2F8563E91AB97950F5DA /* DirectoryPickerView.swift */; };
+		D1B9D708A292EF532C7A8B9C /* BerkeleyMono-Bold-Oblique.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3CB07F43FD670F05B9A43C55 /* BerkeleyMono-Bold-Oblique.otf */; };
 		D1C2C119E9801D3921F44146 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = 01C24E4743B6D5566F473864 /* Inject */; };
 		D2AB8A7F991FD28255C56CD3 /* BrandLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C361CBF40ED3D35C44D46880 /* BrandLogo.swift */; };
 		D512CAC21DF746FA702B10EF /* RecentDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAFD307068C8BB4C5662367 /* RecentDirectoryStore.swift */; };
 		D9CE23EE599BE0F7DBFD0930 /* brand_logo.svg in Resources */ = {isa = PBXBuildFile; fileRef = 74E5DF89D0937E6C17F2BB94 /* brand_logo.svg */; };
+		DA19AD6B4C88B468969FA1CF /* BerkeleyMono-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = B0648D501D363553E86BAE63 /* BerkeleyMono-Regular.otf */; };
 		DB2626F75CCFABC284D6D663 /* commandDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 545E3E3890AFDE088424F0C1 /* commandDictionary.plist */; };
 		DD6CAD6B87A8D48854446B86 /* extraCommandsDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7043F325D81EDDF6CE12024E /* extraCommandsDictionary.plist */; };
 		DEB027917A158E5C5CF0CC8B /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF245554F39E59E68B72EB22 /* ConversationView.swift */; };
@@ -114,6 +121,7 @@
 		E8E75D80AB816ABCFBE01609 /* LitterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 359F3DCDC22C81682DAA7B0D /* LitterApp.swift */; };
 		EA2D4DECB54E28C6E6080CFA /* extraCommandsDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7043F325D81EDDF6CE12024E /* extraCommandsDictionary.plist */; };
 		EF8743F1629EB0DCA20AE787 /* text.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = CECEF29277C1DB1AD1EF304D /* text.xcframework */; };
+		F2A99B16F6AB41896865CD11 /* BerkeleyMono-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3BD63CCD80D9E1F66879EF97 /* BerkeleyMono-Bold.otf */; };
 		F32CF5F7E077ABCAB4ECE1C7 /* text.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = CECEF29277C1DB1AD1EF304D /* text.xcframework */; };
 		F5DC89787AAD41A2462541CD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CFDCB6C4655E3D2D76B41B /* AppState.swift */; };
 		F91EC376599CBBEC881C53E4 /* DirectoryPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318F2F8563E91AB97950F5DA /* DirectoryPickerView.swift */; };
@@ -177,6 +185,8 @@
 		35949923355BB19A7209FD65 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		359F3DCDC22C81682DAA7B0D /* LitterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LitterApp.swift; sourceTree = "<group>"; };
 		3BA392F9C2104B8B643C0F9E /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
+		3BD63CCD80D9E1F66879EF97 /* BerkeleyMono-Bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BerkeleyMono-Bold.otf"; sourceTree = "<group>"; };
+		3CB07F43FD670F05B9A43C55 /* BerkeleyMono-Bold-Oblique.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BerkeleyMono-Bold-Oblique.otf"; sourceTree = "<group>"; };
 		3DC848F239F3563C901428AA /* IosSystemBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = IosSystemBridge.m; sourceTree = "<group>"; };
 		4925417F70C546B80DBD9EFF /* ConnectionTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionTarget.swift; sourceTree = "<group>"; };
 		4CAFD307068C8BB4C5662367 /* RecentDirectoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentDirectoryStore.swift; sourceTree = "<group>"; };
@@ -203,6 +213,8 @@
 		9DEE7E6F96B1BE1235356947 /* CodexIOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CodexIOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A32EC379763C60302C66E8F3 /* JSONRPCClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPCClient.swift; sourceTree = "<group>"; };
 		AA4A8B1B0E48B3DDC9F44D90 /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		ACD06DF72574CDDF16E1E41B /* BerkeleyMono-Oblique.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BerkeleyMono-Oblique.otf"; sourceTree = "<group>"; };
+		B0648D501D363553E86BAE63 /* BerkeleyMono-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BerkeleyMono-Regular.otf"; sourceTree = "<group>"; };
 		BF245554F39E59E68B72EB22 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
 		C361CBF40ED3D35C44D46880 /* BrandLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandLogo.swift; sourceTree = "<group>"; };
 		CECEF29277C1DB1AD1EF304D /* text.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = text.xcframework; path = Frameworks/ios_system/text.xcframework; sourceTree = "<group>"; };
@@ -343,6 +355,10 @@
 		EB7A91131021ED64DF88AF8B /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				3CB07F43FD670F05B9A43C55 /* BerkeleyMono-Bold-Oblique.otf */,
+				3BD63CCD80D9E1F66879EF97 /* BerkeleyMono-Bold.otf */,
+				ACD06DF72574CDDF16E1E41B /* BerkeleyMono-Oblique.otf */,
+				B0648D501D363553E86BAE63 /* BerkeleyMono-Regular.otf */,
 			);
 			path = Fonts;
 			sourceTree = "<group>";
@@ -477,14 +493,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {
-					33C7AA2DCE671BE7CA9AFEC8 = {
-						DevelopmentTeam = UH66Q8ZAYG;
-					};
-					A3D84F588EDBC1EA550D6691 = {
-						DevelopmentTeam = UH66Q8ZAYG;
-					};
-				};
 			};
 			buildConfigurationList = 611DECD8E59F99E2ED675472 /* Build configuration list for PBXProject "Litter" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -519,6 +527,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				863E974F904C137CB6669DE0 /* Assets.xcassets in Resources */,
+				15378E713092362B622ADF95 /* BerkeleyMono-Bold-Oblique.otf in Resources */,
+				F2A99B16F6AB41896865CD11 /* BerkeleyMono-Bold.otf in Resources */,
+				2079821AAFA0AB0D5D4E429C /* BerkeleyMono-Oblique.otf in Resources */,
+				BAB0343536C6CFD8EF952DE0 /* BerkeleyMono-Regular.otf in Resources */,
 				A0F302E6D893FB45DB4E16CB /* Localizable.strings in Resources */,
 				2DBCCE766D2356AB34EA47CF /* brand_logo.png in Resources */,
 				6B6DEAECC59EF7CB0B9500B9 /* brand_logo.svg in Resources */,
@@ -532,6 +544,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				BDD00F77D6868A0501810E51 /* Assets.xcassets in Resources */,
+				D1B9D708A292EF532C7A8B9C /* BerkeleyMono-Bold-Oblique.otf in Resources */,
+				AB436317C3932EE211111561 /* BerkeleyMono-Bold.otf in Resources */,
+				591F49598442E387E16C7BF2 /* BerkeleyMono-Oblique.otf in Resources */,
+				DA19AD6B4C88B468969FA1CF /* BerkeleyMono-Regular.otf in Resources */,
 				C833C49F1B377068396A5308 /* Localizable.strings in Resources */,
 				935A6D5F5378F7093E4540BC /* brand_logo.png in Resources */,
 				D9CE23EE599BE0F7DBFD0930 /* brand_logo.svg in Resources */,
@@ -660,7 +676,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = UH66Q8ZAYG;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
@@ -685,7 +700,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = UH66Q8ZAYG;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
@@ -760,7 +774,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -822,7 +835,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -860,7 +872,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = UH66Q8ZAYG;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks/ios_system\"",
@@ -904,7 +915,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = UH66Q8ZAYG;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks/ios_system\"",

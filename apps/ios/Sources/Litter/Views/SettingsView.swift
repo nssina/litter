@@ -83,7 +83,7 @@ struct SettingsView: View {
                             Text("Custom Font")
                                 .font(LitterFont.monospaced(.subheadline))
                                 .foregroundColor(.white)
-                            Text("Berkeley Mono is not bundled. Please upload your own licensed .otf or .ttf monospace font.")
+                            Text("Using Berkeley Mono for app typography.")
                                 .font(LitterFont.monospaced(.caption))
                                 .foregroundColor(LitterTheme.textSecondary)
                         }

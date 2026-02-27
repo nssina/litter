@@ -48,8 +48,11 @@ enum LitterTheme {
 }
 
 enum LitterFont {
+    private static let berkeleyRegular = "BerkeleyMono-Regular"
+    private static let berkeleyBold = "BerkeleyMono-Bold"
+
     static var markdownFontName: String {
-        "SFMono-Regular"
+        preferredFontName(weight: .regular) ?? "SFMono-Regular"
     }
 
     static func monospaced(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
@@ -62,10 +65,36 @@ enum LitterFont {
     }
 
     private static func monospaced(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle?) -> Font {
+        if let fontName = preferredFontName(weight: weight) {
+            if let style {
+                return .custom(fontName, size: size, relativeTo: style)
+            }
+            return .custom(fontName, size: size)
+        }
         if let style {
             return .system(style, design: .monospaced, weight: weight)
         }
         return .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    private static func preferredFontName(weight: Font.Weight) -> String? {
+        let preferred = isBold(weight: weight) ? berkeleyBold : berkeleyRegular
+        if UIFont(name: preferred, size: 12) != nil {
+            return preferred
+        }
+        if UIFont(name: berkeleyRegular, size: 12) != nil {
+            return berkeleyRegular
+        }
+        return nil
+    }
+
+    private static func isBold(weight: Font.Weight) -> Bool {
+        switch weight {
+        case .semibold, .bold, .heavy, .black:
+            return true
+        default:
+            return false
+        }
     }
 }
 

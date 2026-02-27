@@ -5787,7 +5787,7 @@ private fun SettingsSheetContent(
             ) {
                 Text("Custom Font", color = LitterTheme.textPrimary)
                 Text(
-                    "Berkeley Mono is not bundled. Please upload your own licensed .otf or .ttf monospace font.",
+                    "Using Berkeley Mono for app typography.",
                     color = LitterTheme.textSecondary,
                     style = MaterialTheme.typography.labelLarge,
                 )
