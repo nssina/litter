@@ -17,19 +17,28 @@ struct SessionSidebarView: View {
     @State private var directoryPickerSheet: DirectoryPickerSheetModel?
     @State private var selectedServerFilterId: String?
     @State private var showOnlyForks = false
+    @State private var workspaceSortMode: WorkspaceSortMode = .mostRecent
     @State private var sessionSearchQuery = ""
     @State private var debouncedSessionSearchQuery = ""
     @State private var isForkingActiveThread = false
     @State private var sessionActionErrorMessage: String?
     @State private var renamingThreadKey: ThreadKey?
+    @State private var renameCurrentTitle = ""
     @State private var renameDraft = ""
     @State private var archiveTargetKey: ThreadKey?
     @State private var collapsedWorkspaceGroupIDs: Set<String> = []
+    @State private var collapsedSessionNodeKeys: Set<ThreadKey> = []
     @State private var pendingActiveSessionScroll = false
     @State private var sessionSearchDebounceTask: Task<Void, Never>?
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+    private static let absoluteDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
         return formatter
     }()
     private struct DirectoryPickerSheetModel: Identifiable, Equatable {
@@ -94,6 +103,9 @@ struct SessionSidebarView: View {
             .onChange(of: derived.workspaceGroupIDs) { _, ids in
                 collapsedWorkspaceGroupIDs = collapsedWorkspaceGroupIDs.intersection(Set(ids))
             }
+            .onChange(of: derived.allThreadKeys) { _, keys in
+                collapsedSessionNodeKeys = collapsedSessionNodeKeys.intersection(Set(keys))
+            }
             .onDisappear {
                 sessionSearchDebounceTask?.cancel()
                 sessionSearchDebounceTask = nil
@@ -113,16 +125,23 @@ struct SessionSidebarView: View {
             }
             .alert("Rename Session", isPresented: Binding(
                 get: { renamingThreadKey != nil },
-                set: { if !$0 { renamingThreadKey = nil; renameDraft = "" } }
+                set: {
+                    if !$0 {
+                        renamingThreadKey = nil
+                        renameCurrentTitle = ""
+                        renameDraft = ""
+                    }
+                }
             )) {
-                TextField("Session name", text: $renameDraft)
+                TextField("New session title", text: $renameDraft)
                 Button("Save") { Task { await submitRename() } }
                 Button("Cancel", role: .cancel) {
                     renamingThreadKey = nil
+                    renameCurrentTitle = ""
                     renameDraft = ""
                 }
             } message: {
-                Text("Choose a clearer title for this session.")
+                Text("Current session title:\n\(renameCurrentTitle)")
             }
             .confirmationDialog(
                 "Delete session?",
@@ -424,6 +443,19 @@ struct SessionSidebarView: View {
             }
             .buttonStyle(.plain)
 
+            Menu {
+                ForEach(WorkspaceSortMode.allCases) { mode in
+                    Button(mode.title) { workspaceSortMode = mode }
+                }
+            } label: {
+                filterChip(
+                    title: workspaceSortMode.title,
+                    isActive: workspaceSortMode != .mostRecent,
+                    icon: "arrow.up.arrow.down"
+                )
+            }
+            .buttonStyle(.plain)
+
             if selectedServerFilterId != nil || showOnlyForks {
                 Button("Clear") {
                     selectedServerFilterId = nil
@@ -486,7 +518,7 @@ struct SessionSidebarView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(LitterTheme.accent)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(group.workspaceTitle)
                         .font(LitterFont.monospaced(.caption))
                         .foregroundColor(.white)
@@ -501,13 +533,12 @@ struct SessionSidebarView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(LitterTheme.surface.opacity(0.42))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(LitterTheme.border.opacity(0.55), lineWidth: 1)
-            )
-            .cornerRadius(7)
+            .padding(.vertical, 5)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(LitterTheme.border.opacity(0.75))
+                    .frame(height: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -515,36 +546,61 @@ struct SessionSidebarView: View {
     private func sessionList(derived: SessionSidebarDerivedData) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(derived.groupedWorkspaceGroups) { group in
-                        workspaceGroupHeader(group)
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    ForEach(derived.workspaceSections) { section in
+                        if let title = section.title {
+                            Text(title)
+                                .font(LitterFont.monospaced(.caption2))
+                                .foregroundColor(LitterTheme.textMuted)
+                                .padding(.horizontal, 2)
+                        }
 
-                        if !collapsedWorkspaceGroupIDs.contains(group.id) {
-                            ForEach(group.threads) { thread in
-                                Button {
-                                    Task { await resumeSession(thread) }
-                                } label: {
-                                    sessionRow(thread, isActive: thread.key == serverManager.activeThreadKey, derived: derived)
-                                }
-                                .buttonStyle(.plain)
-                                .id(thread.key)
-                                .disabled(resumingKey != nil)
-                                .contextMenu {
-                                    sessionRowContextMenu(thread)
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                    Button {
-                                        Task { await forkThread(thread) }
-                                    } label: {
-                                        Label("Fork", systemImage: "arrow.triangle.branch")
+                        ForEach(section.groups) { group in
+                            workspaceGroupHeader(group)
+
+                            if !collapsedWorkspaceGroupIDs.contains(group.id) {
+                                ForEach(visibleSessionRows(for: group)) { row in
+                                    let thread = row.thread
+                                    let isCollapsed = collapsedSessionNodeKeys.contains(thread.key)
+
+                                    sessionRow(
+                                        thread,
+                                        isActive: thread.key == serverManager.activeThreadKey,
+                                        derived: derived,
+                                        depth: row.depth,
+                                        hasChildren: row.hasChildren,
+                                        isCollapsed: isCollapsed,
+                                        onToggleNode: {
+                                            guard row.hasChildren else { return }
+                                            if isCollapsed {
+                                                collapsedSessionNodeKeys.remove(thread.key)
+                                            } else {
+                                                collapsedSessionNodeKeys.insert(thread.key)
+                                            }
+                                        },
+                                        onSelectSession: {
+                                            guard resumingKey == nil else { return }
+                                            Task { await resumeSession(thread) }
+                                        }
+                                    )
+                                    .id(thread.key)
+                                    .contextMenu {
+                                        sessionRowContextMenu(thread)
                                     }
-                                    .tint(LitterTheme.accent)
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        archiveTargetKey = thread.key
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                        Button {
+                                            Task { await forkThread(thread) }
+                                        } label: {
+                                            Label("Fork", systemImage: "arrow.triangle.branch")
+                                        }
+                                        .tint(LitterTheme.accent)
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            archiveTargetKey = thread.key
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
                                 }
                             }
@@ -552,7 +608,7 @@ struct SessionSidebarView: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 10)
+                .padding(.vertical, 4)
             }
             .onAppear {
                 scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
@@ -566,6 +622,9 @@ struct SessionSidebarView: View {
             .onChange(of: collapsedWorkspaceGroupIDs) { _, _ in
                 scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
             }
+            .onChange(of: collapsedSessionNodeKeys) { _, _ in
+                scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
+            }
         }
     }
 
@@ -573,7 +632,8 @@ struct SessionSidebarView: View {
     private func sessionRowContextMenu(_ thread: ThreadState) -> some View {
         Button {
             renamingThreadKey = thread.key
-            renameDraft = sessionTitle(thread)
+            renameCurrentTitle = sessionTitle(thread)
+            renameDraft = ""
         } label: {
             Label("Rename", systemImage: "pencil")
         }
@@ -591,85 +651,106 @@ struct SessionSidebarView: View {
         }
     }
 
-    private func sessionRow(_ thread: ThreadState, isActive: Bool, derived: SessionSidebarDerivedData) -> some View {
+    private func sessionRow(
+        _ thread: ThreadState,
+        isActive: Bool,
+        derived: SessionSidebarDerivedData,
+        depth: Int,
+        hasChildren: Bool,
+        isCollapsed: Bool,
+        onToggleNode: @escaping () -> Void,
+        onSelectSession: @escaping () -> Void
+    ) -> some View {
         let parent = derived.parentByKey[thread.key]
 
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 8) {
-                if thread.hasTurnActive {
-                    PulsingDot().padding(.top, 3)
-                } else {
-                    Circle().fill(Color.clear).frame(width: 8, height: 8).padding(.top, 3)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: CGFloat(depth) * 8)
+                    if hasChildren {
+                        Button(action: onToggleNode) {
+                            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(LitterTheme.textSecondary)
+                                .frame(width: 10, height: 10)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear.frame(width: 10, height: 10)
+                    }
                 }
+                .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(sessionTitle(thread))
-                            .font(LitterFont.monospaced(.footnote))
-                            .foregroundColor(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                HStack(alignment: .top, spacing: 6) {
+                    if thread.hasTurnActive {
+                        PulsingDot().padding(.top, 3)
+                    } else {
+                        Circle().fill(Color.clear).frame(width: 8, height: 8).padding(.top, 3)
+                    }
 
-                        if thread.isFork {
-                            Text("Fork")
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(sessionTitle(thread))
+                                .font(LitterFont.monospaced(.footnote))
+                                .foregroundColor(.white)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+
+                            if thread.isFork {
+                                Text("Fork")
+                                    .font(LitterFont.monospaced(.caption2))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(LitterTheme.accent)
+                                    .cornerRadius(4)
+                            }
+
+                            Spacer(minLength: 0)
+
+                            if resumingKey == thread.key {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(LitterTheme.accent)
+                            }
+                        }
+
+                        Text(sessionMetadataLine(thread))
+                            .font(LitterFont.monospaced(.caption))
+                            .foregroundColor(LitterTheme.textSecondary)
+                            .lineLimit(1)
+
+                        if let parent {
+                            Text("from \(sessionTitle(parent))")
                                 .font(LitterFont.monospaced(.caption2))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(LitterTheme.accent)
-                                .cornerRadius(4)
+                                .foregroundColor(LitterTheme.textMuted)
+                                .lineLimit(1)
                         }
 
-                        Spacer(minLength: 0)
-
-                        if resumingKey == thread.key {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(LitterTheme.accent)
+                        if !thread.cwd.isEmpty {
+                            Text(thread.cwd)
+                                .font(LitterFont.monospaced(.caption2))
+                                .foregroundColor(LitterTheme.textMuted)
+                                .lineLimit(1)
                         }
-                    }
-
-                    Text(sessionMetadataLine(thread))
-                        .font(LitterFont.monospaced(.caption))
-                        .foregroundColor(LitterTheme.textSecondary)
-                        .lineLimit(1)
-
-                    if let parent {
-                        Text("from \(sessionTitle(parent))")
-                            .font(LitterFont.monospaced(.caption2))
-                            .foregroundColor(LitterTheme.textMuted)
-                            .lineLimit(1)
-                    }
-
-                    if !thread.cwd.isEmpty {
-                        Text(thread.cwd)
-                            .font(LitterFont.monospaced(.caption2))
-                            .foregroundColor(LitterTheme.textMuted)
-                            .lineLimit(1)
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onSelectSession)
             }
 
             if isActive {
                 lineageSummary(for: thread, derived: derived)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 9)
-                .fill(isActive ? LitterTheme.surfaceLight.opacity(0.65) : LitterTheme.surface.opacity(0.35))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9)
-                .stroke(isActive ? LitterTheme.accent : LitterTheme.border.opacity(0.45), lineWidth: 1)
-        )
-        .overlay(alignment: .leading) {
+        .padding(.leading, 1)
+        .padding(.trailing, 8)
+        .padding(.vertical, 5)
+        .background {
             if isActive {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(LitterTheme.accent)
-                    .frame(width: 3)
-                    .padding(.vertical, 7)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LitterTheme.surfaceLight.opacity(0.55))
             }
         }
     }
@@ -678,51 +759,50 @@ struct SessionSidebarView: View {
         let parent = derived.parentByKey[thread.key]
         let siblings = derived.siblingsByKey[thread.key] ?? []
         let children = derived.childrenByKey[thread.key] ?? []
+        let hasLineage = parent != nil || !siblings.isEmpty || !children.isEmpty
 
-        return VStack(alignment: .leading, spacing: 6) {
-            Divider().background(LitterTheme.border.opacity(0.7))
+        return Group {
+            if hasLineage {
+                VStack(alignment: .leading, spacing: 5) {
+                    Divider().background(LitterTheme.border.opacity(0.7))
 
-            HStack(spacing: 8) {
-                if let parent {
-                    Button {
-                        Task { await resumeSession(parent) }
-                    } label: {
-                        lineageChip(title: "Parent", count: 1, isInteractive: true)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    lineageChip(title: "Parent", count: 0, isInteractive: false)
-                }
+                    HStack(spacing: 6) {
+                        if let parent {
+                            Button {
+                                Task { await resumeSession(parent) }
+                            } label: {
+                                lineageChip(title: "Parent", count: 1, isInteractive: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
 
-                if siblings.isEmpty {
-                    lineageChip(title: "Siblings", count: 0, isInteractive: false)
-                } else {
-                    Menu {
-                        ForEach(siblings) { sibling in
-                            Button(sessionTitle(sibling)) {
-                                Task { await resumeSession(sibling) }
+                        if !siblings.isEmpty {
+                            Menu {
+                                ForEach(siblings) { sibling in
+                                    Button(sessionTitle(sibling)) {
+                                        Task { await resumeSession(sibling) }
+                                    }
+                                }
+                            } label: {
+                                lineageChip(title: "Siblings", count: siblings.count, isInteractive: true)
                             }
                         }
-                    } label: {
-                        lineageChip(title: "Siblings", count: siblings.count, isInteractive: true)
-                    }
-                }
 
-                if children.isEmpty {
-                    lineageChip(title: "Children", count: 0, isInteractive: false)
-                } else {
-                    Menu {
-                        ForEach(children) { child in
-                            Button(sessionTitle(child)) {
-                                Task { await resumeSession(child) }
+                        if !children.isEmpty {
+                            Menu {
+                                ForEach(children) { child in
+                                    Button(sessionTitle(child)) {
+                                        Task { await resumeSession(child) }
+                                    }
+                                }
+                            } label: {
+                                lineageChip(title: "Children", count: children.count, isInteractive: true)
                             }
                         }
-                    } label: {
-                        lineageChip(title: "Children", count: children.count, isInteractive: true)
+
+                        Spacer(minLength: 0)
                     }
                 }
-
-                Spacer(minLength: 0)
             }
         }
     }
@@ -739,6 +819,30 @@ struct SessionSidebarView: View {
                     .stroke(isInteractive ? LitterTheme.accent.opacity(0.5) : LitterTheme.border.opacity(0.5), lineWidth: 1)
             )
             .cornerRadius(5)
+    }
+
+    private func visibleSessionRows(for group: WorkspaceSessionGroup) -> [SessionTreeRow] {
+        var rows: [SessionTreeRow] = []
+
+        func append(nodes: [SessionTreeNode], depth: Int) {
+            for node in nodes {
+                let hasChildren = !node.children.isEmpty
+                rows.append(
+                    SessionTreeRow(
+                        thread: node.thread,
+                        depth: depth,
+                        hasChildren: hasChildren
+                    )
+                )
+
+                if hasChildren && !collapsedSessionNodeKeys.contains(node.thread.key) {
+                    append(nodes: node.children, depth: depth + 1)
+                }
+            }
+        }
+
+        append(nodes: group.treeRoots, depth: 0)
+        return rows
     }
 
     private func scheduleActiveSessionScrollIfNeeded() {
@@ -760,10 +864,31 @@ struct SessionSidebarView: View {
             return
         }
 
+        if let collapsedAncestor = ancestorThreadKeys(for: activeKey, derived: derived)
+            .reversed()
+            .first(where: { collapsedSessionNodeKeys.contains($0) }) {
+            collapsedSessionNodeKeys.remove(collapsedAncestor)
+            return
+        }
+
         pendingActiveSessionScroll = false
         withAnimation(.easeInOut(duration: 0.2)) {
             proxy.scrollTo(activeKey, anchor: .center)
         }
+    }
+
+    private func ancestorThreadKeys(for key: ThreadKey, derived: SessionSidebarDerivedData) -> [ThreadKey] {
+        var ancestors: [ThreadKey] = []
+        var visited: Set<ThreadKey> = []
+        var cursor: ThreadState? = derived.parentByKey[key]
+
+        while let thread = cursor, !visited.contains(thread.key) {
+            ancestors.append(thread.key)
+            visited.insert(thread.key)
+            cursor = derived.parentByKey[thread.key]
+        }
+
+        return ancestors
     }
 
     private func workspaceGroupID(for thread: ThreadState) -> String {
@@ -804,6 +929,87 @@ struct SessionSidebarView: View {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func sortWorkspaceGroups(_ groups: [WorkspaceSessionGroup]) -> [WorkspaceSessionGroup] {
+        groups.sorted { (lhs: WorkspaceSessionGroup, rhs: WorkspaceSessionGroup) in
+            switch workspaceSortMode {
+            case .mostRecent:
+                if lhs.latestUpdatedAt != rhs.latestUpdatedAt {
+                    return lhs.latestUpdatedAt > rhs.latestUpdatedAt
+                }
+                return lhs.workspaceTitle.localizedCaseInsensitiveCompare(rhs.workspaceTitle) == .orderedAscending
+            case .name:
+                let titleOrder = lhs.workspaceTitle.localizedCaseInsensitiveCompare(rhs.workspaceTitle)
+                if titleOrder != .orderedSame {
+                    return titleOrder == .orderedAscending
+                }
+                let pathOrder = lhs.workspacePath.localizedCaseInsensitiveCompare(rhs.workspacePath)
+                if pathOrder != .orderedSame {
+                    return pathOrder == .orderedAscending
+                }
+                let serverOrder = lhs.serverName.localizedCaseInsensitiveCompare(rhs.serverName)
+                if serverOrder != .orderedSame {
+                    return serverOrder == .orderedAscending
+                }
+                return lhs.latestUpdatedAt > rhs.latestUpdatedAt
+            case .date:
+                if lhs.latestUpdatedAt != rhs.latestUpdatedAt {
+                    return lhs.latestUpdatedAt > rhs.latestUpdatedAt
+                }
+                let titleOrder = lhs.workspaceTitle.localizedCaseInsensitiveCompare(rhs.workspaceTitle)
+                if titleOrder != .orderedSame {
+                    return titleOrder == .orderedAscending
+                }
+                let pathOrder = lhs.workspacePath.localizedCaseInsensitiveCompare(rhs.workspacePath)
+                if pathOrder != .orderedSame {
+                    return pathOrder == .orderedAscending
+                }
+                return lhs.serverName.localizedCaseInsensitiveCompare(rhs.serverName) == .orderedAscending
+            }
+        }
+    }
+
+    private func workspaceSections(for groups: [WorkspaceSessionGroup]) -> [WorkspaceGroupSection] {
+        guard workspaceSortMode == .date else {
+            guard !groups.isEmpty else { return [] }
+            return [WorkspaceGroupSection(id: "all", title: nil, groups: groups)]
+        }
+
+        let calendar = Calendar.current
+        var groupsByDay: [Date: [WorkspaceSessionGroup]] = [:]
+        for group in groups {
+            let dayStart = calendar.startOfDay(for: group.latestUpdatedAt)
+            groupsByDay[dayStart, default: []].append(group)
+        }
+
+        return groupsByDay.keys
+            .sorted(by: >)
+            .map { dayStart in
+                WorkspaceGroupSection(
+                    id: "day-\(Int(dayStart.timeIntervalSince1970))",
+                    title: workspaceDateSectionLabel(for: dayStart),
+                    groups: groupsByDay[dayStart] ?? []
+                )
+            }
+    }
+
+    private func workspaceDateSectionLabel(for date: Date) -> String {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: date)
+        let nowStart = calendar.startOfDay(for: Date())
+        let dayDelta = max(calendar.dateComponents([.day], from: dayStart, to: nowStart).day ?? 0, 0)
+
+        switch dayDelta {
+        case 0:
+            return "Today"
+        case 1:
+            return "Yesterday"
+        case 2 ... 6:
+            return "\(dayDelta) days ago"
+        default:
+            return Self.absoluteDateFormatter.string(from: dayStart)
+        }
     }
 
     private func makeDerivedData() -> SessionSidebarDerivedData {
@@ -864,11 +1070,12 @@ struct SessionSidebarView: View {
         }
 
         let groupedByWorkspace = Dictionary(grouping: filteredThreads) { workspaceGroupID(for: $0) }
-        let groupedWorkspaceGroups: [WorkspaceSessionGroup] = groupedByWorkspace
+        let groupedWorkspaceGroups = groupedByWorkspace
             .compactMap { (groupID: String, threads: [ThreadState]) -> WorkspaceSessionGroup? in
                 let sortedThreads = threads.sorted { $0.updatedAt > $1.updatedAt }
                 guard let first = sortedThreads.first else { return nil }
                 let workspacePath = normalizedWorkspacePath(first.cwd)
+                let treeRoots = buildSessionTree(for: sortedThreads, parentByKey: parentByKey)
                 return WorkspaceSessionGroup(
                     id: groupID,
                     serverId: first.serverId,
@@ -876,26 +1083,72 @@ struct SessionSidebarView: View {
                     workspacePath: workspacePath,
                     workspaceTitle: workspaceTitle(for: workspacePath),
                     latestUpdatedAt: first.updatedAt,
-                    threads: sortedThreads
+                    threads: sortedThreads,
+                    treeRoots: treeRoots
                 )
             }
-            .sorted { (lhs: WorkspaceSessionGroup, rhs: WorkspaceSessionGroup) in
-                if lhs.latestUpdatedAt != rhs.latestUpdatedAt {
-                    return lhs.latestUpdatedAt > rhs.latestUpdatedAt
-                }
-                return lhs.workspaceTitle.localizedCaseInsensitiveCompare(rhs.workspaceTitle) == .orderedAscending
-            }
+        let sortedWorkspaceGroups = sortWorkspaceGroups(groupedWorkspaceGroups)
+        let workspaceSections = workspaceSections(for: sortedWorkspaceGroups)
 
         return SessionSidebarDerivedData(
             allThreads: allThreads,
+            allThreadKeys: allThreads.map(\.key),
             filteredThreads: filteredThreads,
             filteredThreadKeys: filteredThreads.map(\.key),
-            groupedWorkspaceGroups: groupedWorkspaceGroups,
-            workspaceGroupIDs: groupedWorkspaceGroups.map { $0.id },
+            workspaceSections: workspaceSections,
+            workspaceGroupIDs: sortedWorkspaceGroups.map { $0.id },
             parentByKey: parentByKey,
             siblingsByKey: siblingsByKey,
             childrenByKey: childrenByKey
         )
+    }
+
+    private func buildSessionTree(
+        for threads: [ThreadState],
+        parentByKey: [ThreadKey: ThreadState]
+    ) -> [SessionTreeNode] {
+        let threadsByKey = Dictionary(uniqueKeysWithValues: threads.map { ($0.key, $0) })
+        var childrenByParentKey: [ThreadKey: [ThreadState]] = [:]
+
+        for thread in threads {
+            guard let parent = parentByKey[thread.key], threadsByKey[parent.key] != nil else { continue }
+            childrenByParentKey[parent.key, default: []].append(thread)
+        }
+        childrenByParentKey = childrenByParentKey.mapValues { children in
+            children.sorted { $0.updatedAt > $1.updatedAt }
+        }
+
+        var emitted: Set<ThreadKey> = []
+
+        func makeNode(_ thread: ThreadState, path: inout Set<ThreadKey>) -> SessionTreeNode {
+            path.insert(thread.key)
+            let children = (childrenByParentKey[thread.key] ?? []).compactMap { child -> SessionTreeNode? in
+                guard !path.contains(child.key), emitted.insert(child.key).inserted else { return nil }
+                return makeNode(child, path: &path)
+            }
+            path.remove(thread.key)
+            return SessionTreeNode(thread: thread, children: children)
+        }
+
+        let roots = threads.filter { thread in
+            guard let parent = parentByKey[thread.key] else { return true }
+            return threadsByKey[parent.key] == nil
+        }
+
+        var treeRoots: [SessionTreeNode] = []
+        for root in roots {
+            guard emitted.insert(root.key).inserted else { continue }
+            var path: Set<ThreadKey> = []
+            treeRoots.append(makeNode(root, path: &path))
+        }
+
+        for thread in threads where !emitted.contains(thread.key) {
+            emitted.insert(thread.key)
+            var path: Set<ThreadKey> = []
+            treeRoots.append(makeNode(thread, path: &path))
+        }
+
+        return treeRoots
     }
 
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
@@ -968,12 +1221,15 @@ struct SessionSidebarView: View {
 
     private func submitRename() async {
         guard let key = renamingThreadKey else { return }
+        let nextTitle = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nextTitle.isEmpty else { return }
         do {
-            try await serverManager.renameThread(key, to: renameDraft)
+            try await serverManager.renameThread(key, to: nextTitle)
         } catch {
             sessionActionErrorMessage = error.localizedDescription
         }
         renamingThreadKey = nil
+        renameCurrentTitle = ""
         renameDraft = ""
     }
 
@@ -992,6 +1248,25 @@ struct SessionSidebarView: View {
     }
 }
 
+private enum WorkspaceSortMode: String, CaseIterable, Identifiable {
+    case mostRecent
+    case name
+    case date
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mostRecent:
+            return "Most Recent"
+        case .name:
+            return "Name"
+        case .date:
+            return "Date"
+        }
+    }
+}
+
 private struct WorkspaceSessionGroup: Identifiable {
     let id: String
     let serverId: String
@@ -1000,13 +1275,36 @@ private struct WorkspaceSessionGroup: Identifiable {
     let workspaceTitle: String
     let latestUpdatedAt: Date
     let threads: [ThreadState]
+    let treeRoots: [SessionTreeNode]
+}
+
+private struct WorkspaceGroupSection: Identifiable {
+    let id: String
+    let title: String?
+    let groups: [WorkspaceSessionGroup]
+}
+
+private struct SessionTreeNode: Identifiable {
+    let thread: ThreadState
+    let children: [SessionTreeNode]
+
+    var id: ThreadKey { thread.key }
+}
+
+private struct SessionTreeRow: Identifiable {
+    let thread: ThreadState
+    let depth: Int
+    let hasChildren: Bool
+
+    var id: ThreadKey { thread.key }
 }
 
 private struct SessionSidebarDerivedData {
     let allThreads: [ThreadState]
+    let allThreadKeys: [ThreadKey]
     let filteredThreads: [ThreadState]
     let filteredThreadKeys: [ThreadKey]
-    let groupedWorkspaceGroups: [WorkspaceSessionGroup]
+    let workspaceSections: [WorkspaceGroupSection]
     let workspaceGroupIDs: [String]
     let parentByKey: [ThreadKey: ThreadState]
     let siblingsByKey: [ThreadKey: [ThreadState]]

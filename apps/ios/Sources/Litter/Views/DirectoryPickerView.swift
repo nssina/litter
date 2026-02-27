@@ -46,9 +46,6 @@ private enum DirectoryPickerStrings {
         String.localizedStringWithFormat(String(localized: "directory_picker_continue_in_folder"), folder)
     }
 
-    static func selectFolderPath(_ path: String) -> String {
-        String.localizedStringWithFormat(String(localized: "directory_picker_select_folder_path"), path)
-    }
 }
 
 private let directoryPickerSignpostLog = OSLog(
@@ -93,12 +90,6 @@ private final class DirectoryPickerSheetModel: ObservableObject {
             return DirectoryPickerStrings.noSubdirectories
         }
         return DirectoryPickerStrings.noMatches(trimmedSearchQuery)
-    }
-
-    func selectedPathButtonLabel(canSelectPath: Bool) -> String {
-        guard canSelectPath else { return DirectoryPickerStrings.selectFolder }
-        let path = currentPath.count > 56 ? "...\(currentPath.suffix(55))" : currentPath
-        return DirectoryPickerStrings.selectFolderPath(path)
     }
 
     func pathSegments() -> [DirectoryPathSegment] {
@@ -349,10 +340,6 @@ struct DirectoryPickerView: View {
         model.recentEntries.first
     }
 
-    private var selectedPathButtonLabel: String {
-        model.selectedPathButtonLabel(canSelectPath: canSelectPath)
-    }
-
     var body: some View {
         ZStack {
             LitterTheme.backgroundGradient.ignoresSafeArea()
@@ -368,23 +355,6 @@ struct DirectoryPickerView: View {
         .navigationTitle(DirectoryPickerStrings.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(DirectoryPickerStrings.cancel) {
-                    Task {
-                        if model.canNavigateUp {
-                            await model.navigateUp(
-                                selectedServerId: selectedServerId,
-                                serverManager: serverManager
-                            )
-                        } else {
-                            onDismissRequested?()
-                        }
-                    }
-                }
-                .foregroundColor(LitterTheme.accent)
-            }
-        }
         .interactiveDismissDisabled(model.canNavigateUp)
         .task(id: selectedServerId) {
             onServerChanged?(selectedServerId)
@@ -699,29 +669,58 @@ struct DirectoryPickerView: View {
     }
 
     private var bottomActionBar: some View {
-        VStack(spacing: 6) {
-            if !canSelectPath {
+        VStack(alignment: .leading, spacing: 8) {
+            if !model.currentPath.isEmpty {
+                Text(model.currentPath)
+                    .font(LitterFont.monospaced(.caption))
+                    .foregroundColor(LitterTheme.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if !canSelectPath {
                 Text(DirectoryPickerStrings.chooseFolderHelper)
                     .font(LitterFont.monospaced(.caption))
                     .foregroundColor(LitterTheme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button {
-                emitSuccessHaptic()
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    onDirectorySelected?(selectedServerId, model.currentPath)
+            HStack(spacing: 10) {
+                Button(DirectoryPickerStrings.cancel) {
+                    onDismissRequested?()
                 }
-            } label: {
-                Text(selectedPathButtonLabel)
-                    .font(LitterFont.monospaced(.subheadline))
-                    .frame(maxWidth: .infinity)
+                .buttonStyle(.plain)
+                .font(LitterFont.monospaced(.subheadline))
+                .foregroundColor(LitterTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(LitterTheme.surface.opacity(0.65))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(LitterTheme.border.opacity(0.75), lineWidth: 1)
+                )
+                .cornerRadius(8)
+
+                Button(DirectoryPickerStrings.selectFolder) {
+                    emitSuccessHaptic()
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        onDirectorySelected?(selectedServerId, model.currentPath)
+                    }
+                }
+                .disabled(!canSelectPath)
+                .buttonStyle(.plain)
+                .font(LitterFont.monospaced(.subheadline))
+                .foregroundColor(canSelectPath ? .black : LitterTheme.textMuted)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(canSelectPath ? LitterTheme.accent : LitterTheme.surface.opacity(0.65))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(canSelectPath ? LitterTheme.accent.opacity(0.8) : LitterTheme.border.opacity(0.75), lineWidth: 1)
+                )
+                .cornerRadius(8)
             }
-            .disabled(!canSelectPath)
-            .buttonStyle(.borderedProminent)
-            .tint(LitterTheme.accent)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(.top, 8)
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
     }

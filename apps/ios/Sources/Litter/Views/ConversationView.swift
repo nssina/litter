@@ -236,6 +236,7 @@ private struct ConversationInputBar: View {
     @State private var showExperimentalSheet = false
     @State private var showSkillsSheet = false
     @State private var showRenamePrompt = false
+    @State private var renameCurrentThreadTitle = ""
     @State private var renameDraft = ""
     @State private var slashErrorMessage: String?
     @State private var experimentalFeatures: [ExperimentalFeature] = []
@@ -481,16 +482,27 @@ private struct ConversationInputBar: View {
             }
             .preferredColorScheme(.dark)
         }
-        .alert("Rename Thread", isPresented: $showRenamePrompt) {
-            TextField("Thread name", text: $renameDraft)
-            Button("Cancel", role: .cancel) {}
+        .alert("Rename Thread", isPresented: Binding(
+            get: { showRenamePrompt },
+            set: { isPresented in
+                showRenamePrompt = isPresented
+                if !isPresented {
+                    renameCurrentThreadTitle = ""
+                    renameDraft = ""
+                }
+            }
+        )) {
+            TextField("New thread title", text: $renameDraft)
+            Button("Cancel", role: .cancel) {
+                showRenamePrompt = false
+            }
             Button("Rename") {
                 let nextName = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !nextName.isEmpty else { return }
                 Task { await renameThread(nextName) }
             }
         } message: {
-            Text("Set a new name for the active thread.")
+            Text("Current thread title:\n\(renameCurrentThreadTitle)")
         }
         .alert("Slash Command Error", isPresented: Binding(
             get: { slashErrorMessage != nil },
@@ -920,7 +932,9 @@ private struct ConversationInputBar: View {
         case .rename:
             let initialName = args?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if initialName.isEmpty {
-                renameDraft = serverManager.activeThread?.preview ?? ""
+                let currentTitle = serverManager.activeThread?.preview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                renameCurrentThreadTitle = currentTitle.isEmpty ? "Untitled thread" : currentTitle
+                renameDraft = ""
                 showRenamePrompt = true
             } else {
                 Task { await renameThread(initialName) }
@@ -959,6 +973,8 @@ private struct ConversationInputBar: View {
         do {
             try await serverManager.renameActiveThread(newName)
             showRenamePrompt = false
+            renameCurrentThreadTitle = ""
+            renameDraft = ""
         } catch {
             slashErrorMessage = error.localizedDescription
         }

@@ -59,6 +59,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -76,8 +77,10 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.AlertDialog
@@ -117,6 +120,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -176,6 +180,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.LinkedHashMap
 import java.util.Locale
 
@@ -205,7 +212,7 @@ fun LitterAppShell(
 ) {
     val uiState by appState.uiState.collectAsStateWithLifecycle()
     DebugRecomposeCheckpoint(name = "LitterAppShell")
-    val drawerWidth = 304.dp
+    val drawerWidth = 350.dp
 
     Box(modifier = modifier.fillMaxSize().background(LitterTheme.backgroundBrush)) {
         Column(
@@ -296,7 +303,10 @@ fun LitterAppShell(
                 activeThreadKey = uiState.activeThreadKey,
                 onSessionSelected = appState::selectSession,
                 onSessionSearchQueryChange = appState::updateSessionSearchQuery,
-                onNewSession = appState::openNewSessionPicker,
+                onNewSession = {
+                    appState.dismissSidebar()
+                    appState.openNewSessionPicker()
+                },
                 onRefresh = appState::refreshSessions,
                 onForkConversation = appState::forkConversation,
                 onForkSession = appState::forkSession,
@@ -631,6 +641,9 @@ private fun SessionSidebar(
     var showOnlyForks by rememberSaveable { mutableStateOf(false) }
     var selectedServerFilterId by rememberSaveable { mutableStateOf<String?>(null) }
     var isServerFilterMenuOpen by remember { mutableStateOf(false) }
+    var isSortMenuOpen by remember { mutableStateOf(false) }
+    var workspaceSortModeRaw by rememberSaveable { mutableStateOf(WorkspaceSortMode.MOST_RECENT.name) }
+    val workspaceSortMode = remember(workspaceSortModeRaw) { WorkspaceSortMode.fromRaw(workspaceSortModeRaw) }
     val collapsedWorkspaceIdsSaver =
         remember {
             listSaver<Set<String>, String>(
@@ -639,6 +652,14 @@ private fun SessionSidebar(
             )
         }
     var collapsedWorkspaceGroupIds by rememberSaveable(stateSaver = collapsedWorkspaceIdsSaver) { mutableStateOf(setOf<String>()) }
+    val collapsedSessionNodeIdsSaver =
+        remember {
+            listSaver<Set<String>, String>(
+                save = { it.toList() },
+                restore = { restored -> restored.toSet() },
+            )
+        }
+    var collapsedSessionNodeIds by rememberSaveable(stateSaver = collapsedSessionNodeIdsSaver) { mutableStateOf(setOf<String>()) }
     var rowMenuThreadKey by remember { mutableStateOf<ThreadKey?>(null) }
     var renameTargetThread by remember { mutableStateOf<ThreadState?>(null) }
     var renameDraft by remember { mutableStateOf("") }
@@ -680,7 +701,14 @@ private fun SessionSidebar(
                     }.toList()
             }
         }
-    val workspaceGroups by remember(filteredSessions) { derivedStateOf { groupSessionsByWorkspace(filteredSessions) } }
+    val workspaceGroups by
+        remember(filteredSessions, workspaceSortMode) {
+            derivedStateOf { groupSessionsByWorkspace(filteredSessions, workspaceSortMode) }
+        }
+    val workspaceSections by
+        remember(workspaceGroups, workspaceSortMode) {
+            derivedStateOf { buildWorkspaceSections(workspaceGroups, workspaceSortMode) }
+        }
     val activeWorkspaceGroupId by
         remember(workspaceGroups, activeThreadKey) {
             derivedStateOf {
@@ -689,22 +717,43 @@ private fun SessionSidebar(
             }
         }
     val activeSessionItemIndex by
-        remember(workspaceGroups, collapsedWorkspaceGroupIds, activeThreadKey) {
+        remember(workspaceSections, collapsedWorkspaceGroupIds, collapsedSessionNodeIds, activeThreadKey, lineageIndex.parentByKey) {
             derivedStateOf {
                 val targetKey = activeThreadKey ?: return@derivedStateOf null
                 var runningIndex = 0
-                for (group in workspaceGroups) {
-                    runningIndex += 1 // workspace header row
-                    if (collapsedWorkspaceGroupIds.contains(group.id)) {
-                        continue
+                for (section in workspaceSections) {
+                    if (section.title != null) {
+                        runningIndex += 1 // date section label row
                     }
-                    val threadIndex = group.threads.indexOfFirst { it.key == targetKey }
-                    if (threadIndex >= 0) {
-                        return@derivedStateOf runningIndex + threadIndex
+                    for (group in section.groups) {
+                        runningIndex += 1 // workspace header row
+                        if (collapsedWorkspaceGroupIds.contains(group.id)) {
+                            continue
+                        }
+                        val visibleRows =
+                            buildVisibleSessionTreeRows(
+                                groupThreads = group.threads,
+                                parentByKey = lineageIndex.parentByKey,
+                                collapsedNodeIds = collapsedSessionNodeIds,
+                            )
+                        val threadIndex = visibleRows.indexOfFirst { it.thread.key == targetKey }
+                        if (threadIndex >= 0) {
+                            return@derivedStateOf runningIndex + threadIndex
+                        }
+                        runningIndex += visibleRows.size
                     }
-                    runningIndex += group.threads.size
                 }
                 null
+            }
+        }
+    val collapsedAncestorNodeId by
+        remember(activeThreadKey, collapsedSessionNodeIds, lineageIndex.parentByKey) {
+            derivedStateOf {
+                val targetKey = activeThreadKey ?: return@derivedStateOf null
+                ancestorThreadKeys(targetKey, lineageIndex.parentByKey)
+                    .asReversed()
+                    .map(::threadNodeId)
+                    .firstOrNull { collapsedSessionNodeIds.contains(it) }
             }
         }
     val serverNameById =
@@ -717,6 +766,11 @@ private fun SessionSidebar(
         collapsedWorkspaceGroupIds = collapsedWorkspaceGroupIds.intersect(validIds)
     }
 
+    LaunchedEffect(sessions) {
+        val validIds = sessions.map { thread -> threadNodeId(thread.key) }.toSet()
+        collapsedSessionNodeIds = collapsedSessionNodeIds.intersect(validIds)
+    }
+
     LaunchedEffect(
         pendingActiveSessionScroll,
         isSidebarOpen,
@@ -724,6 +778,7 @@ private fun SessionSidebar(
         activeWorkspaceGroupId,
         activeSessionItemIndex,
         collapsedWorkspaceGroupIds,
+        collapsedAncestorNodeId,
     ) {
         if (!pendingActiveSessionScroll || !isSidebarOpen) {
             return@LaunchedEffect
@@ -739,6 +794,11 @@ private fun SessionSidebar(
         }
         if (collapsedWorkspaceGroupIds.contains(targetGroupId)) {
             collapsedWorkspaceGroupIds = collapsedWorkspaceGroupIds - targetGroupId
+            return@LaunchedEffect
+        }
+        val ancestorNodeId = collapsedAncestorNodeId
+        if (ancestorNodeId != null) {
+            collapsedSessionNodeIds = collapsedSessionNodeIds - ancestorNodeId
             return@LaunchedEffect
         }
         val targetIndex = activeSessionItemIndex
@@ -758,7 +818,7 @@ private fun SessionSidebar(
     ) {
         Column(
             modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Button(
                 onClick = onNewSession,
@@ -796,8 +856,15 @@ private fun SessionSidebar(
                             Text("Fork")
                         }
                     }
-                    TextButton(onClick = onRefresh) {
-                        Text("Refresh")
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh sessions",
+                            tint = LitterTheme.textSecondary,
+                        )
                     }
                 }
             }
@@ -866,6 +933,36 @@ private fun SessionSidebar(
                         Text(if (showOnlyForks) "Forks only" else "Forks")
                     }
 
+                    Box {
+                        OutlinedButton(
+                            onClick = { isSortMenuOpen = true },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        ) {
+                            Icon(
+                                imageVector = workspaceSortModeIcon(),
+                                contentDescription = "Sort sessions by ${workspaceSortMode.title}",
+                                tint = LitterTheme.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isSortMenuOpen,
+                            onDismissRequest = { isSortMenuOpen = false },
+                        ) {
+                            WorkspaceSortMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.title) },
+                                    onClick = {
+                                        workspaceSortModeRaw = mode.name
+                                        isSortMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+
                     if (selectedServerFilterId != null || showOnlyForks) {
                         TextButton(
                             onClick = {
@@ -890,71 +987,92 @@ private fun SessionSidebar(
                     LazyColumn(
                         state = sessionListState,
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
-                        workspaceGroups.forEach { group ->
-                            val isCollapsed = collapsedWorkspaceGroupIds.contains(group.id)
-                            item(key = "workspace-${group.id}") {
-                                WorkspaceSessionGroupHeader(
-                                    group = group,
-                                    isCollapsed = isCollapsed,
-                                    onToggle = {
-                                        collapsedWorkspaceGroupIds =
-                                            if (isCollapsed) {
-                                                collapsedWorkspaceGroupIds - group.id
-                                            } else {
-                                                collapsedWorkspaceGroupIds + group.id
-                                            }
-                                    },
-                                )
+                        workspaceSections.forEach { section ->
+                            section.title?.let { title ->
+                                item(key = "workspace-section-${section.id}") {
+                                    Text(
+                                        text = title,
+                                        color = LitterTheme.textMuted,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                                    )
+                                }
                             }
 
-                            if (!isCollapsed) {
-                                items(items = group.threads, key = { "${it.key.serverId}:${it.key.threadId}" }) { thread ->
-                                    val isActive = thread.key == activeThreadKey
-                                    val parent = lineageIndex.parentByKey[thread.key]
-                                    val siblings = lineageIndex.siblingsByKey[thread.key].orEmpty()
-                                    val children = lineageIndex.childrenByParentKey[thread.key].orEmpty()
+                            section.groups.forEach { group ->
+                                val isCollapsed = collapsedWorkspaceGroupIds.contains(group.id)
+                                item(key = "workspace-${group.id}") {
+                                    WorkspaceSessionGroupHeader(
+                                        group = group,
+                                        isCollapsed = isCollapsed,
+                                        onToggle = {
+                                            collapsedWorkspaceGroupIds =
+                                                if (isCollapsed) {
+                                                    collapsedWorkspaceGroupIds - group.id
+                                                } else {
+                                                    collapsedWorkspaceGroupIds + group.id
+                                                }
+                                        },
+                                    )
+                                }
 
-                                    Surface(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .clickable { onSessionSelected(thread.key) }
-                                                .padding(start = 8.dp),
-                                        color = if (isActive) LitterTheme.surfaceLight.copy(alpha = 0.64f) else LitterTheme.surface.copy(alpha = 0.58f),
-                                        shape = RoundedCornerShape(9.dp),
-                                        border =
-                                            androidx.compose.foundation.BorderStroke(
-                                                1.dp,
-                                                if (isActive) LitterTheme.accent else LitterTheme.border,
-                                            ),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.Top,
+                                if (!isCollapsed) {
+                                    val visibleRows =
+                                        buildVisibleSessionTreeRows(
+                                            groupThreads = group.threads,
+                                            parentByKey = lineageIndex.parentByKey,
+                                            collapsedNodeIds = collapsedSessionNodeIds,
+                                        )
+                                    items(items = visibleRows, key = { threadNodeId(it.thread.key) }) { row ->
+                                        val thread = row.thread
+                                        val isActive = thread.key == activeThreadKey
+                                        val isNodeCollapsed = collapsedSessionNodeIds.contains(threadNodeId(thread.key))
+                                        val parent = lineageIndex.parentByKey[thread.key]
+                                        val siblings = lineageIndex.siblingsByKey[thread.key].orEmpty()
+                                        val children = lineageIndex.childrenByParentKey[thread.key].orEmpty()
+                                        val hasLineage = parent != null || siblings.isNotEmpty() || children.isNotEmpty()
+
+                                        Column(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
                                         ) {
-                                            Box(
+                                            Column(
                                                 modifier =
                                                     Modifier
-                                                        .padding(top = 8.dp, bottom = 8.dp, start = 6.dp)
-                                                        .width(3.dp)
-                                                        .heightIn(min = 18.dp)
-                                                        .background(if (isActive) LitterTheme.accent else Color.Transparent),
-                                            )
-                                            Column(
-                                                modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 9.dp),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .clickable { onSessionSelected(thread.key) }
+                                                        .background(
+                                                            if (isActive) {
+                                                                LitterTheme.surfaceLight.copy(alpha = 0.55f)
+                                                            } else {
+                                                                Color.Transparent
+                                                            },
+                                                        )
+                                                        .padding(start = 1.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp),
                                             ) {
                                                 Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                     verticalAlignment = Alignment.Top,
                                                 ) {
-                                                    if (thread.hasTurnActive) {
-                                                        ActiveTurnPulseDot(modifier = Modifier.padding(top = 3.dp))
-                                                    } else {
-                                                        Spacer(modifier = Modifier.size(8.dp))
-                                                    }
+                                                    SessionTreePrefix(
+                                                        depth = row.depth,
+                                                        hasChildren = row.hasChildren,
+                                                        isCollapsed = isNodeCollapsed,
+                                                        onToggle = {
+                                                            if (row.hasChildren) {
+                                                                collapsedSessionNodeIds =
+                                                                    if (isNodeCollapsed) {
+                                                                        collapsedSessionNodeIds - threadNodeId(thread.key)
+                                                                    } else {
+                                                                        collapsedSessionNodeIds + threadNodeId(thread.key)
+                                                                    }
+                                                            }
+                                                        },
+                                                    )
 
                                                     Text(
                                                         text = thread.preview.ifBlank { "Untitled session" },
@@ -999,7 +1117,7 @@ private fun SessionSidebar(
                                                                 text = { Text("Rename") },
                                                                 onClick = {
                                                                     renameTargetThread = thread
-                                                                    renameDraft = thread.preview.ifBlank { "Untitled session" }
+                                                                    renameDraft = ""
                                                                     renameError = null
                                                                     rowMenuThreadKey = null
                                                                 },
@@ -1050,32 +1168,40 @@ private fun SessionSidebar(
                                                     )
                                                 }
 
-                                                if (isActive) {
+                                                if (isActive && hasLineage) {
                                                     Row(
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                     ) {
-                                                        SessionLineageChip(
-                                                            title = "Parent",
-                                                            count = if (parent != null) 1 else 0,
-                                                            isInteractive = parent != null,
-                                                            onClick = { parent?.let { onSessionSelected(it.key) } },
-                                                        )
-                                                        SessionLineageChip(
-                                                            title = "Siblings",
-                                                            count = siblings.size,
-                                                            isInteractive = siblings.isNotEmpty(),
-                                                            onClick = { siblings.firstOrNull()?.let { onSessionSelected(it.key) } },
-                                                        )
-                                                        SessionLineageChip(
-                                                            title = "Children",
-                                                            count = children.size,
-                                                            isInteractive = children.isNotEmpty(),
-                                                            onClick = { children.firstOrNull()?.let { onSessionSelected(it.key) } },
-                                                        )
+                                                        parent?.let {
+                                                            SessionLineageChip(
+                                                                title = "Parent",
+                                                                count = 1,
+                                                                onClick = { onSessionSelected(it.key) },
+                                                            )
+                                                        }
+                                                        if (siblings.isNotEmpty()) {
+                                                            SessionLineageChip(
+                                                                title = "Siblings",
+                                                                count = siblings.size,
+                                                                onClick = { siblings.firstOrNull()?.let { sibling -> onSessionSelected(sibling.key) } },
+                                                            )
+                                                        }
+                                                        if (children.isNotEmpty()) {
+                                                            SessionLineageChip(
+                                                                title = "Children",
+                                                                count = children.size,
+                                                                onClick = { children.firstOrNull()?.let { child -> onSessionSelected(child.key) } },
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
+                                            HorizontalDivider(
+                                                modifier = Modifier.padding(start = 24.dp),
+                                                color = LitterTheme.border.copy(alpha = 0.65f),
+                                                thickness = 1.dp,
+                                            )
                                         }
                                     }
                                 }
@@ -1120,6 +1246,11 @@ private fun SessionSidebar(
             title = { Text("Rename Session") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = thread.preview.ifBlank { "Untitled session" },
+                        color = LitterTheme.textSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     OutlinedTextField(
                         value = renameDraft,
                         onValueChange = {
@@ -1127,7 +1258,8 @@ private fun SessionSidebar(
                             renameError = null
                         },
                         singleLine = true,
-                        label = { Text("Name") },
+                        label = { Text("New title") },
+                        placeholder = { Text("New session title") },
                     )
                     renameError?.let {
                         Text(
@@ -1208,14 +1340,15 @@ private fun WorkspaceSessionGroupHeader(
         } else {
             "${group.serverName} • ${group.workspacePath} • $sessionCountLabel"
         }
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
-        color = LitterTheme.surface.copy(alpha = 0.42f),
-        shape = RoundedCornerShape(7.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border.copy(alpha = 0.55f)),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -1248,6 +1381,43 @@ private fun WorkspaceSessionGroupHeader(
                 )
             }
         }
+        HorizontalDivider(
+            color = LitterTheme.border.copy(alpha = 0.75f),
+            thickness = 1.dp,
+        )
+    }
+}
+
+@Composable
+private fun SessionTreePrefix(
+    depth: Int,
+    hasChildren: Boolean,
+    isCollapsed: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.padding(top = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (depth > 0) {
+            Spacer(modifier = Modifier.width((depth * 8).dp))
+        }
+        if (hasChildren) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(12.dp)
+                        .clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isCollapsed) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isCollapsed) "Expand" else "Collapse",
+                    tint = LitterTheme.textSecondary,
+                    modifier = Modifier.size(10.dp),
+                )
+            }
+        }
     }
 }
 
@@ -1255,22 +1425,21 @@ private fun WorkspaceSessionGroupHeader(
 private fun SessionLineageChip(
     title: String,
     count: Int,
-    isInteractive: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.clickable(enabled = isInteractive, onClick = onClick),
+        modifier = Modifier.clickable(onClick = onClick),
         color = LitterTheme.surface.copy(alpha = 0.7f),
         shape = RoundedCornerShape(5.dp),
         border =
             androidx.compose.foundation.BorderStroke(
                 1.dp,
-                if (isInteractive) LitterTheme.accent.copy(alpha = 0.45f) else LitterTheme.border.copy(alpha = 0.7f),
+                LitterTheme.accent.copy(alpha = 0.45f),
             ),
     ) {
         Text(
             text = "$title $count",
-            color = if (isInteractive) LitterTheme.accent else LitterTheme.textMuted,
+            color = LitterTheme.accent,
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
         )
@@ -1284,7 +1453,6 @@ private fun SessionLineageChipPreview() {
         SessionLineageChip(
             title = "Children",
             count = 3,
-            isInteractive = true,
             onClick = {},
         )
     }
@@ -1293,6 +1461,87 @@ private fun SessionLineageChipPreview() {
 private fun sessionMetaLine(thread: ThreadState): String {
     val modelLabel = thread.modelProvider.ifBlank { "default" }
     return "${relativeDate(thread.updatedAtEpochMillis)} • ${thread.serverName} • $modelLabel"
+}
+
+private fun threadNodeId(key: ThreadKey): String = "${key.serverId}:${key.threadId}"
+
+private data class SessionTreeRow(
+    val thread: ThreadState,
+    val depth: Int,
+    val hasChildren: Boolean,
+)
+
+private fun buildVisibleSessionTreeRows(
+    groupThreads: List<ThreadState>,
+    parentByKey: Map<ThreadKey, ThreadState>,
+    collapsedNodeIds: Set<String>,
+): List<SessionTreeRow> {
+    if (groupThreads.isEmpty()) {
+        return emptyList()
+    }
+
+    val threadsByKey = groupThreads.associateBy { thread -> thread.key }
+    val childrenByParentKey = LinkedHashMap<ThreadKey, MutableList<ThreadState>>()
+    groupThreads.forEach { thread ->
+        val parent = parentByKey[thread.key] ?: return@forEach
+        if (!threadsByKey.containsKey(parent.key)) {
+            return@forEach
+        }
+        childrenByParentKey.getOrPut(parent.key) { mutableListOf() }.add(thread)
+    }
+
+    val sortedChildrenByParentKey =
+        childrenByParentKey.mapValues { (_, children) ->
+            children.sortedByDescending { it.updatedAtEpochMillis }
+        }
+
+    val roots =
+        groupThreads.filter { thread ->
+            val parent = parentByKey[thread.key] ?: return@filter true
+            !threadsByKey.containsKey(parent.key)
+        }
+
+    val rows = mutableListOf<SessionTreeRow>()
+    val emitted = mutableSetOf<ThreadKey>()
+
+    fun appendThread(thread: ThreadState, depth: Int, path: MutableSet<ThreadKey>) {
+        if (!emitted.add(thread.key) || !path.add(thread.key)) {
+            return
+        }
+        val children = sortedChildrenByParentKey[thread.key].orEmpty()
+        rows += SessionTreeRow(thread = thread, depth = depth, hasChildren = children.isNotEmpty())
+        if (!collapsedNodeIds.contains(threadNodeId(thread.key))) {
+            children.forEach { child ->
+                appendThread(child, depth + 1, path)
+            }
+        }
+        path.remove(thread.key)
+    }
+
+    roots.forEach { root ->
+        appendThread(root, depth = 0, path = mutableSetOf())
+    }
+    groupThreads.forEach { thread ->
+        if (!emitted.contains(thread.key)) {
+            appendThread(thread, depth = 0, path = mutableSetOf())
+        }
+    }
+
+    return rows
+}
+
+private fun ancestorThreadKeys(
+    targetKey: ThreadKey,
+    parentByKey: Map<ThreadKey, ThreadState>,
+): List<ThreadKey> {
+    val ancestors = mutableListOf<ThreadKey>()
+    val visited = mutableSetOf<ThreadKey>()
+    var cursor: ThreadState? = parentByKey[targetKey]
+    while (cursor != null && visited.add(cursor.key)) {
+        ancestors += cursor.key
+        cursor = parentByKey[cursor.key]
+    }
+    return ancestors
 }
 
 private data class ThreadLineageIndex(
@@ -1390,7 +1639,32 @@ private data class WorkspaceSessionGroup(
     val threads: List<ThreadState>,
 )
 
-private fun groupSessionsByWorkspace(threads: List<ThreadState>): List<WorkspaceSessionGroup> {
+private enum class WorkspaceSortMode(
+    val title: String,
+) {
+    MOST_RECENT("Most Recent"),
+    NAME("Name"),
+    DATE("Date"),
+    ;
+
+    companion object {
+        fun fromRaw(value: String?): WorkspaceSortMode =
+            entries.firstOrNull { it.name == value } ?: MOST_RECENT
+    }
+}
+
+private fun workspaceSortModeIcon(): ImageVector = Icons.AutoMirrored.Filled.Sort
+
+private data class WorkspaceGroupSection(
+    val id: String,
+    val title: String?,
+    val groups: List<WorkspaceSessionGroup>,
+)
+
+private fun groupSessionsByWorkspace(
+    threads: List<ThreadState>,
+    sortMode: WorkspaceSortMode,
+): List<WorkspaceSessionGroup> {
     val grouped = LinkedHashMap<String, MutableList<ThreadState>>()
     threads.forEach { thread ->
         val workspacePath = normalizeFolderPath(thread.cwd)
@@ -1410,7 +1684,98 @@ private fun groupSessionsByWorkspace(threads: List<ThreadState>): List<Workspace
                 latestUpdatedAtEpochMillis = first.updatedAtEpochMillis,
                 threads = sortedThreads,
             )
-        }.sortedByDescending { it.latestUpdatedAtEpochMillis }
+        }.let { unsorted -> sortWorkspaceGroups(unsorted, sortMode) }
+}
+
+private fun sortWorkspaceGroups(
+    groups: List<WorkspaceSessionGroup>,
+    sortMode: WorkspaceSortMode,
+): List<WorkspaceSessionGroup> {
+    return groups.sortedWith { lhs, rhs ->
+        when (sortMode) {
+            WorkspaceSortMode.MOST_RECENT -> {
+                when {
+                    lhs.latestUpdatedAtEpochMillis != rhs.latestUpdatedAtEpochMillis ->
+                        rhs.latestUpdatedAtEpochMillis.compareTo(lhs.latestUpdatedAtEpochMillis)
+                    else -> lhs.workspaceTitle.lowercase(Locale.ROOT).compareTo(rhs.workspaceTitle.lowercase(Locale.ROOT))
+                }
+            }
+
+            WorkspaceSortMode.NAME -> {
+                val titleOrder = lhs.workspaceTitle.lowercase(Locale.ROOT).compareTo(rhs.workspaceTitle.lowercase(Locale.ROOT))
+                if (titleOrder != 0) {
+                    return@sortedWith titleOrder
+                }
+                val pathOrder = lhs.workspacePath.lowercase(Locale.ROOT).compareTo(rhs.workspacePath.lowercase(Locale.ROOT))
+                if (pathOrder != 0) {
+                    return@sortedWith pathOrder
+                }
+                val serverOrder = lhs.serverName.lowercase(Locale.ROOT).compareTo(rhs.serverName.lowercase(Locale.ROOT))
+                if (serverOrder != 0) {
+                    return@sortedWith serverOrder
+                }
+                rhs.latestUpdatedAtEpochMillis.compareTo(lhs.latestUpdatedAtEpochMillis)
+            }
+
+            WorkspaceSortMode.DATE -> {
+                when {
+                    lhs.latestUpdatedAtEpochMillis != rhs.latestUpdatedAtEpochMillis ->
+                        rhs.latestUpdatedAtEpochMillis.compareTo(lhs.latestUpdatedAtEpochMillis)
+                    else -> lhs.workspaceTitle.lowercase(Locale.ROOT).compareTo(rhs.workspaceTitle.lowercase(Locale.ROOT))
+                }
+            }
+        }
+    }
+}
+
+private fun buildWorkspaceSections(
+    groups: List<WorkspaceSessionGroup>,
+    sortMode: WorkspaceSortMode,
+): List<WorkspaceGroupSection> {
+    if (groups.isEmpty()) {
+        return emptyList()
+    }
+    if (sortMode != WorkspaceSortMode.DATE) {
+        return listOf(WorkspaceGroupSection(id = "all", title = null, groups = groups))
+    }
+
+    val nowDayStart = dayStartMillis(System.currentTimeMillis())
+    val groupsByDay = LinkedHashMap<Long, MutableList<WorkspaceSessionGroup>>()
+    groups.forEach { group ->
+        val dayStart = dayStartMillis(group.latestUpdatedAtEpochMillis)
+        groupsByDay.getOrPut(dayStart) { mutableListOf() }.add(group)
+    }
+
+    return groupsByDay.entries.map { (dayStart, dayGroups) ->
+        WorkspaceGroupSection(
+            id = "workspace-day-$dayStart",
+            title = workspaceDateSectionLabel(dayStart, nowDayStart),
+            groups = dayGroups,
+        )
+    }
+}
+
+private fun dayStartMillis(epochMillis: Long): Long {
+    val calendar = Calendar.getInstance()
+    calendar.timeInMillis = epochMillis
+    calendar.set(Calendar.HOUR_OF_DAY, 0)
+    calendar.set(Calendar.MINUTE, 0)
+    calendar.set(Calendar.SECOND, 0)
+    calendar.set(Calendar.MILLISECOND, 0)
+    return calendar.timeInMillis
+}
+
+private fun workspaceDateSectionLabel(
+    dayStartMillis: Long,
+    nowDayStartMillis: Long,
+): String {
+    val dayDelta = ((nowDayStartMillis - dayStartMillis) / DateUtils.DAY_IN_MILLIS).toInt().coerceAtLeast(0)
+    return when {
+        dayDelta == 0 -> "Today"
+        dayDelta == 1 -> "Yesterday"
+        dayDelta in 2..6 -> "$dayDelta days ago"
+        else -> SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(dayStartMillis))
+    }
 }
 @Composable
 private fun BrandLogo(
@@ -2417,6 +2782,7 @@ private fun InputBar(
     var showExperimentalSheet by remember { mutableStateOf(false) }
     var showSkillsSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var renameCurrentTitle by remember { mutableStateOf("") }
     var renameDraft by remember { mutableStateOf("") }
     var slashErrorMessage by remember { mutableStateOf<String?>(null) }
     var experimentalFeatures by remember { mutableStateOf<List<ExperimentalFeature>>(emptyList()) }
@@ -2637,7 +3003,8 @@ private fun InputBar(
                         }
                     }
                 } else {
-                    renameDraft = activeThreadPreview
+                    renameCurrentTitle = activeThreadPreview.ifBlank { "Untitled thread" }
+                    renameDraft = ""
                     showRenameDialog = true
                 }
             }
@@ -3047,18 +3414,32 @@ private fun InputBar(
 
     if (showRenameDialog) {
         AlertDialog(
-            onDismissRequest = { showRenameDialog = false },
+            onDismissRequest = {
+                showRenameDialog = false
+                renameCurrentTitle = ""
+                renameDraft = ""
+            },
             title = { Text("Rename Thread") },
             text = {
-                OutlinedTextField(
-                    value = renameDraft,
-                    onValueChange = { renameDraft = it },
-                    label = { Text("Thread name") },
-                    singleLine = true,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = renameCurrentTitle,
+                        color = LitterTheme.textSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = renameDraft,
+                        onValueChange = { renameDraft = it },
+                        label = { Text("New thread title") },
+                        placeholder = { Text("Enter new thread title") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
+                    enabled = renameDraft.trim().isNotEmpty(),
                     onClick = {
                         val nextName = renameDraft.trim()
                         if (nextName.isEmpty()) {
@@ -3070,6 +3451,8 @@ private fun InputBar(
                             }
                             result.onSuccess {
                                 showRenameDialog = false
+                                renameCurrentTitle = ""
+                                renameDraft = ""
                             }
                         }
                     },
@@ -3078,7 +3461,13 @@ private fun InputBar(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRenameDialog = false }) {
+                TextButton(
+                    onClick = {
+                        showRenameDialog = false
+                        renameCurrentTitle = ""
+                        renameDraft = ""
+                    },
+                ) {
                     Text("Cancel")
                 }
             },
@@ -4026,6 +4415,118 @@ private fun DirectoryPickerSheet(
     onRetry: () -> Unit,
 ) {
     DebugRecomposeCheckpoint(name = "DirectoryPickerSheet")
+    val configuration = LocalConfiguration.current
+    val useLargeScreenDialog =
+        configuration.screenWidthDp >= 900 || configuration.smallestScreenWidthDp >= 600
+
+    BackHandler(enabled = true) { onDismiss() }
+
+    if (useLargeScreenDialog) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.9f),
+                    color = LitterTheme.surface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                ) {
+                    DirectoryPickerSheetContent(
+                        connectedServers = connectedServers,
+                        selectedServerId = selectedServerId,
+                        path = path,
+                        entries = entries,
+                        recentDirectories = recentDirectories,
+                        isLoading = isLoading,
+                        error = error,
+                        searchQuery = searchQuery,
+                        showHiddenDirectories = showHiddenDirectories,
+                        onDismiss = onDismiss,
+                        onServerSelected = onServerSelected,
+                        onSearchQueryChange = onSearchQueryChange,
+                        onShowHiddenDirectoriesChange = onShowHiddenDirectoriesChange,
+                        onNavigateUp = onNavigateUp,
+                        onNavigateInto = onNavigateInto,
+                        onNavigateToPath = onNavigateToPath,
+                        onSelect = onSelect,
+                        onSelectRecent = onSelectRecent,
+                        onRemoveRecentDirectory = onRemoveRecentDirectory,
+                        onClearRecentDirectories = onClearRecentDirectories,
+                        onRetry = onRetry,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp),
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        DirectoryPickerSheetContent(
+            connectedServers = connectedServers,
+            selectedServerId = selectedServerId,
+            path = path,
+            entries = entries,
+            recentDirectories = recentDirectories,
+            isLoading = isLoading,
+            error = error,
+            searchQuery = searchQuery,
+            showHiddenDirectories = showHiddenDirectories,
+            onDismiss = onDismiss,
+            onServerSelected = onServerSelected,
+            onSearchQueryChange = onSearchQueryChange,
+            onShowHiddenDirectoriesChange = onShowHiddenDirectoriesChange,
+            onNavigateUp = onNavigateUp,
+            onNavigateInto = onNavigateInto,
+            onNavigateToPath = onNavigateToPath,
+            onSelect = onSelect,
+            onSelectRecent = onSelectRecent,
+            onRemoveRecentDirectory = onRemoveRecentDirectory,
+            onClearRecentDirectories = onClearRecentDirectories,
+            onRetry = onRetry,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun DirectoryPickerSheetContent(
+    connectedServers: List<ServerConfig>,
+    selectedServerId: String?,
+    path: String,
+    entries: List<String>,
+    recentDirectories: List<RecentDirectoryUiState>,
+    isLoading: Boolean,
+    error: String?,
+    searchQuery: String,
+    showHiddenDirectories: Boolean,
+    onDismiss: () -> Unit,
+    onServerSelected: (String) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onShowHiddenDirectoriesChange: (Boolean) -> Unit,
+    onNavigateUp: () -> Unit,
+    onNavigateInto: (String) -> Unit,
+    onNavigateToPath: (String) -> Unit,
+    onSelect: () -> Unit,
+    onSelectRecent: (String) -> Unit,
+    onRemoveRecentDirectory: (String) -> Unit,
+    onClearRecentDirectories: () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var serverMenuExpanded by rememberSaveable { mutableStateOf(false) }
     var recentsMenuExpanded by rememberSaveable { mutableStateOf(false) }
     var showClearRecentsConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -4052,348 +4553,322 @@ private fun DirectoryPickerSheet(
     val canSelect = selectedServer != null && selectedPath.isNotBlank() && !isLoading
     val canGoUp = selectedServer != null && selectedPath != "/"
     val continueRecent = remember(recentDirectories, trimmedQuery) { recentDirectories.firstOrNull()?.takeIf { trimmedQuery.isEmpty() } }
-    val selectPathLabel =
-        remember(selectedPath) {
-            if (selectedPath.length <= 46) {
-                selectedPath
-            } else {
-                "…${selectedPath.takeLast(45)}"
-            }
-        }
+    val selectedPathLabel = remember(selectedPath) { middleEllipsize(selectedPath, maxChars = 56) }
     val pathSegments = remember(selectedPath) { directoryPathSegments(selectedPath) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    BackHandler(enabled = true) {
-        if (canGoUp) {
-            onNavigateUp()
-        } else {
-            onDismiss()
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.92f)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        Text(stringResource(R.string.directory_picker_title), style = MaterialTheme.typography.titleMedium)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(stringResource(R.string.directory_picker_title), style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier.weight(1f),
+                color = LitterTheme.surface.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
             ) {
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    color = LitterTheme.surface.copy(alpha = 0.65f),
-                    shape = RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
-                ) {
-                    Text(
-                        text = stringResource(R.string.directory_picker_connected_server, selectedServerLabel),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = LitterTheme.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Box {
-                    TextButton(
-                        onClick = { serverMenuExpanded = true },
-                        enabled = connectedServers.isNotEmpty(),
-                    ) {
-                        Text(stringResource(R.string.directory_picker_change_server))
-                    }
-                    DropdownMenu(
-                        expanded = serverMenuExpanded,
-                        onDismissRequest = { serverMenuExpanded = false },
-                    ) {
-                        connectedServers.forEach { server ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "${server.name} • ${serverSourceLabel(server.source)}",
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                                onClick = {
-                                    serverMenuExpanded = false
-                                    onServerSelected(server.id)
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.directory_picker_search_folders)) },
-                singleLine = true,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = showHiddenDirectories,
-                    onCheckedChange = { checked ->
-                        onShowHiddenDirectoriesChange(checked)
-                    },
-                )
                 Text(
-                    text = stringResource(R.string.directory_picker_show_hidden_folders),
+                    text = stringResource(R.string.directory_picker_connected_server, selectedServerLabel),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelLarge,
                     color = LitterTheme.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = onNavigateUp,
-                    enabled = canGoUp,
+            Box {
+                TextButton(
+                    onClick = { serverMenuExpanded = true },
+                    enabled = connectedServers.isNotEmpty(),
                 ) {
-                    Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.directory_picker_up_one_level))
+                    Text(stringResource(R.string.directory_picker_change_server))
                 }
-                pathSegments.forEach { segment ->
-                    Surface(
-                        modifier = Modifier.clickable { onNavigateToPath(segment.path) },
-                        color = if (segment.path == selectedPath) LitterTheme.surfaceLight else LitterTheme.surface.copy(alpha = 0.65f),
-                        shape = RoundedCornerShape(16.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (segment.path == selectedPath) LitterTheme.accent else LitterTheme.border),
-                    ) {
-                        Text(
-                            text = segment.label,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                DropdownMenu(
+                    expanded = serverMenuExpanded,
+                    onDismissRequest = { serverMenuExpanded = false },
+                ) {
+                    connectedServers.forEach { server ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "${server.name} • ${serverSourceLabel(server.source)}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            onClick = {
+                                serverMenuExpanded = false
+                                onServerSelected(server.id)
+                            },
                         )
                     }
                 }
             }
+        }
 
-            Surface(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                color = LitterTheme.surface.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(10.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.directory_picker_search_folders)) },
+            singleLine = true,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = showHiddenDirectories,
+                onCheckedChange = { checked ->
+                    onShowHiddenDirectoriesChange(checked)
+                },
+            )
+            Text(
+                text = stringResource(R.string.directory_picker_show_hidden_folders),
+                color = LitterTheme.textSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onNavigateUp,
+                enabled = canGoUp,
             ) {
-                when {
-                    isLoading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.directory_picker_loading),
-                                color = LitterTheme.textMuted,
-                            )
+                Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(R.string.directory_picker_up_one_level))
+            }
+            pathSegments.forEach { segment ->
+                Surface(
+                    modifier = Modifier.clickable { onNavigateToPath(segment.path) },
+                    color = if (segment.path == selectedPath) LitterTheme.surfaceLight else LitterTheme.surface.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (segment.path == selectedPath) LitterTheme.accent else LitterTheme.border),
+                ) {
+                    Text(
+                        text = segment.label,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            color = LitterTheme.surface.copy(alpha = 0.4f),
+            shape = RoundedCornerShape(10.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+        ) {
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.directory_picker_loading),
+                            color = LitterTheme.textMuted,
+                        )
+                    }
+                }
+
+                error != null -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.directory_picker_load_error),
+                            color = LitterTheme.danger,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = error,
+                            color = LitterTheme.textSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = onRetry) {
+                                Text(stringResource(R.string.directory_picker_retry))
+                            }
+                            TextButton(onClick = { serverMenuExpanded = true }) {
+                                Text(stringResource(R.string.directory_picker_change_server))
+                            }
                         }
                     }
+                }
 
-                    error != null -> {
-                        Column(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.directory_picker_load_error),
-                                color = LitterTheme.danger,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = error,
-                                color = LitterTheme.textSecondary,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = onRetry) {
-                                    Text(stringResource(R.string.directory_picker_retry))
-                                }
-                                TextButton(onClick = { serverMenuExpanded = true }) {
-                                    Text(stringResource(R.string.directory_picker_change_server))
-                                }
-                            }
-                        }
-                    }
-
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize().padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            continueRecent?.let { recent ->
-                                item(key = "continue-recent") {
-                                    Button(
-                                        onClick = { onSelectRecent(recent.path) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.directory_picker_continue_in_folder, cwdLeaf(recent.path)),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (showRecentDirectories) {
-                                item(key = "recents-header") {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.directory_picker_recent_directories),
-                                            color = LitterTheme.textSecondary,
-                                            style = MaterialTheme.typography.labelLarge,
-                                        )
-                                        Box {
-                                            IconButton(onClick = { recentsMenuExpanded = true }) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = null, tint = LitterTheme.textSecondary)
-                                            }
-                                            DropdownMenu(
-                                                expanded = recentsMenuExpanded,
-                                                onDismissRequest = { recentsMenuExpanded = false },
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.directory_picker_clear_recent_directories)) },
-                                                    onClick = {
-                                                        recentsMenuExpanded = false
-                                                        showClearRecentsConfirmation = true
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                items(recentDirectories, key = { "recent-${it.path}" }) { recent ->
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth().clickable { onSelectRecent(recent.path) },
-                                        color = LitterTheme.surfaceLight.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Folder,
-                                                contentDescription = null,
-                                                tint = LitterTheme.textSecondary,
-                                            )
-                                            Column(
-                                                modifier = Modifier.weight(1f),
-                                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                                            ) {
-                                                Text(
-                                                    recent.path,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                )
-                                                val relativeDate =
-                                                    DateUtils
-                                                        .getRelativeTimeSpanString(
-                                                            recent.lastUsedAtEpochMillis,
-                                                            System.currentTimeMillis(),
-                                                            DateUtils.MINUTE_IN_MILLIS,
-                                                        ).toString()
-                                                Text(
-                                                    "$relativeDate • ${recent.useCount} uses",
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = LitterTheme.textSecondary,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                )
-                                            }
-                                            IconButton(onClick = { onRemoveRecentDirectory(recent.path) }) {
-                                                Icon(
-                                                    Icons.Default.Close,
-                                                    contentDescription = stringResource(R.string.directory_picker_remove_recent),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (canGoUp) {
-                                item(key = "up") {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateUp),
-                                        color = LitterTheme.surface.copy(alpha = 0.6f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = LitterTheme.textSecondary)
-                                            Text(
-                                                text = stringResource(R.string.directory_picker_up_one_level),
-                                                color = LitterTheme.textSecondary,
-                                                style = MaterialTheme.typography.bodySmall,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (visibleEntries.isEmpty()) {
-                                item(key = "empty") {
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        continueRecent?.let { recent ->
+                            item(key = "continue-recent") {
+                                Button(
+                                    onClick = { onSelectRecent(recent.path) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
                                     Text(
-                                        text = emptyMessage,
-                                        color = LitterTheme.textMuted,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+                                        text = stringResource(R.string.directory_picker_continue_in_folder, cwdLeaf(recent.path)),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                            } else {
-                                items(visibleEntries, key = { it }) { entry ->
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth().clickable { onNavigateInto(entry) },
-                                        color = LitterTheme.surface.copy(alpha = 0.6f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            Icon(Icons.Default.Folder, contentDescription = null, tint = LitterTheme.textSecondary)
-                                            Text(entry, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+
+                        if (showRecentDirectories) {
+                            item(key = "recents-header") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.directory_picker_recent_directories),
+                                        color = LitterTheme.textSecondary,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                    Box {
+                                        IconButton(onClick = { recentsMenuExpanded = true }) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = null, tint = LitterTheme.textSecondary)
                                         }
+                                        DropdownMenu(
+                                            expanded = recentsMenuExpanded,
+                                            onDismissRequest = { recentsMenuExpanded = false },
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.directory_picker_clear_recent_directories)) },
+                                                onClick = {
+                                                    recentsMenuExpanded = false
+                                                    showClearRecentsConfirmation = true
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            items(recentDirectories, key = { "recent-${it.path}" }) { recent ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { onSelectRecent(recent.path) },
+                                    color = LitterTheme.surfaceLight.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Folder,
+                                            contentDescription = null,
+                                            tint = LitterTheme.textSecondary,
+                                        )
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Text(
+                                                recent.path,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            val relativeDate =
+                                                DateUtils
+                                                    .getRelativeTimeSpanString(
+                                                        recent.lastUsedAtEpochMillis,
+                                                        System.currentTimeMillis(),
+                                                        DateUtils.MINUTE_IN_MILLIS,
+                                                    ).toString()
+                                            Text(
+                                                "$relativeDate • ${recent.useCount} uses",
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = LitterTheme.textSecondary,
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                        IconButton(onClick = { onRemoveRecentDirectory(recent.path) }) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = stringResource(R.string.directory_picker_remove_recent),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (canGoUp) {
+                            item(key = "up") {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateUp),
+                                    color = LitterTheme.surface.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = LitterTheme.textSecondary)
+                                        Text(
+                                            text = stringResource(R.string.directory_picker_up_one_level),
+                                            color = LitterTheme.textSecondary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (visibleEntries.isEmpty()) {
+                            item(key = "empty") {
+                                Text(
+                                    text = emptyMessage,
+                                    color = LitterTheme.textMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+                                )
+                            }
+                        } else {
+                            items(visibleEntries, key = { it }) { entry ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { onNavigateInto(entry) },
+                                    color = LitterTheme.surface.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(Icons.Default.Folder, contentDescription = null, tint = LitterTheme.textSecondary)
+                                        Text(entry, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -4401,39 +4876,39 @@ private fun DirectoryPickerSheet(
                     }
                 }
             }
+        }
 
-            Column(
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (selectedPath.isNotBlank()) {
+                Text(
+                    text = selectedPathLabel,
+                    color = LitterTheme.textMuted,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                )
+            } else if (!canSelect) {
+                Text(
+                    text = stringResource(R.string.directory_picker_choose_folder_helper),
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!canSelect) {
-                    Text(
-                        text = stringResource(R.string.directory_picker_choose_folder_helper),
-                        color = LitterTheme.textSecondary,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-                Button(
-                    onClick = onSelect,
-                    enabled = canSelect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text =
-                            if (canSelect) {
-                                stringResource(R.string.directory_picker_select_folder_path, selectPathLabel)
-                            } else {
-                                stringResource(R.string.directory_picker_select_folder)
-                            },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.directory_picker_cancel))
                 }
                 TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End),
+                    onClick = onSelect,
+                    enabled = canSelect,
                 ) {
-                    Text(stringResource(R.string.directory_picker_cancel))
+                    Text(stringResource(R.string.directory_picker_select_folder))
                 }
             }
         }
@@ -4484,6 +4959,18 @@ private fun directoryPathSegments(path: String): List<DirectoryPathSegment> {
             segments += DirectoryPathSegment(label = segment, path = runningPath)
         }
     return segments
+}
+
+private fun middleEllipsize(
+    value: String,
+    maxChars: Int,
+): String {
+    if (maxChars < 5 || value.length <= maxChars) {
+        return value
+    }
+    val headCount = (maxChars - 1) / 2
+    val tailCount = maxChars - 1 - headCount
+    return "${value.take(headCount)}…${value.takeLast(tailCount)}"
 }
 
 private enum class ManualField {
