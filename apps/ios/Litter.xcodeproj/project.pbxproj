@@ -51,7 +51,6 @@
 		52E7CA333B014D1F4AAFA9D6 /* IosSystemBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3DC848F239F3563C901428AA /* IosSystemBridge.m */; };
 		5342E9DEE1FB318F01E27F7E /* ChatTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E05AE5CC346C8D2ED2FED /* ChatTypes.swift */; };
 		536EF112EA2B3405B03B0BB6 /* commandDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 545E3E3890AFDE088424F0C1 /* commandDictionary.plist */; };
-		5580BF102E2E3D1A678BCE73 /* BerkeleyMonoVariable.otf in Resources */ = {isa = PBXBuildFile; fileRef = 78B0B5E85383BBF1FC956BE9 /* BerkeleyMonoVariable.otf */; };
 		56DBF9B40EDB38539AD3F363 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1959956ABBEC98793B97B468 /* MessageBubbleView.swift */; };
 		5AB1046D51A1A192F1952893 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF245554F39E59E68B72EB22 /* ConversationView.swift */; };
 		5D69A8BA80D3B1B771C94DC0 /* OnDeviceCodexFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93677A51659C08505EA4CE10 /* OnDeviceCodexFeature.swift */; };
@@ -111,7 +110,6 @@
 		DB2626F75CCFABC284D6D663 /* commandDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 545E3E3890AFDE088424F0C1 /* commandDictionary.plist */; };
 		DD6CAD6B87A8D48854446B86 /* extraCommandsDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7043F325D81EDDF6CE12024E /* extraCommandsDictionary.plist */; };
 		DEB027917A158E5C5CF0CC8B /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF245554F39E59E68B72EB22 /* ConversationView.swift */; };
-		E2CEC52CCD24BA0839837076 /* BerkeleyMonoVariable.otf in Resources */ = {isa = PBXBuildFile; fileRef = 78B0B5E85383BBF1FC956BE9 /* BerkeleyMonoVariable.otf */; };
 		E41F675D5DA4CB9AAF30EDC4 /* BrandLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C361CBF40ED3D35C44D46880 /* BrandLogo.swift */; };
 		E7A9712ECD67A5C560F104EE /* RecentDirectoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAFD307068C8BB4C5662367 /* RecentDirectoryStore.swift */; };
 		E8981E5AEE611332DB397462 /* files.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 19CB61EDE7B1FF0CF2EC81BB /* files.xcframework */; };
@@ -195,7 +193,6 @@
 		74E5DF89D0937E6C17F2BB94 /* brand_logo.svg */ = {isa = PBXFileReference; path = brand_logo.svg; sourceTree = "<group>"; };
 		754A6F0D26DFBE19A8C6625F /* SSHSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHSessionManager.swift; sourceTree = "<group>"; };
 		7779BD02F3B304F9C3AD32A1 /* DiscoveredServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveredServer.swift; sourceTree = "<group>"; };
-		78B0B5E85383BBF1FC956BE9 /* BerkeleyMonoVariable.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = BerkeleyMonoVariable.otf; sourceTree = "<group>"; };
 		7EAAD91EA135C03B2759124D /* SidebarOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarOverlay.swift; sourceTree = "<group>"; };
 		7F79D1C06A25D0ABAA5042BA /* SafariView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariView.swift; sourceTree = "<group>"; };
 		817117A5E16EBD02388DBBE1 /* HeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderView.swift; sourceTree = "<group>"; };
@@ -350,7 +347,6 @@
 		EB7A91131021ED64DF88AF8B /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
-				78B0B5E85383BBF1FC956BE9 /* BerkeleyMonoVariable.otf */,
 			);
 			path = Fonts;
 			sourceTree = "<group>";
@@ -527,7 +523,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				863E974F904C137CB6669DE0 /* Assets.xcassets in Resources */,
-				E2CEC52CCD24BA0839837076 /* BerkeleyMonoVariable.otf in Resources */,
 				A0F302E6D893FB45DB4E16CB /* Localizable.strings in Resources */,
 				2DBCCE766D2356AB34EA47CF /* brand_logo.png in Resources */,
 				6B6DEAECC59EF7CB0B9500B9 /* brand_logo.svg in Resources */,
@@ -541,7 +536,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				BDD00F77D6868A0501810E51 /* Assets.xcassets in Resources */,
-				5580BF102E2E3D1A678BCE73 /* BerkeleyMonoVariable.otf in Resources */,
 				C833C49F1B377068396A5308 /* Localizable.strings in Resources */,
 				935A6D5F5378F7093E4540BC /* brand_logo.png in Resources */,
 				D9CE23EE599BE0F7DBFD0930 /* brand_logo.svg in Resources */,
@@ -729,7 +723,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.CodexIOSTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.litter.CodexIOSTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Litter.app/Litter";
@@ -904,7 +898,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.CodexIOSTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.litter.CodexIOSTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Litter.app/Litter";

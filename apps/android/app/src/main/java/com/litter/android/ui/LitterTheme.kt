@@ -9,12 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
-import com.sigkitten.litter.android.R
 
 object LitterTheme {
     val accent = Color(0xFFB0B0B0)
@@ -64,7 +62,7 @@ object LitterTheme {
         )
 }
 
-private val Mono = FontFamily(Font(R.font.berkeley_mono_variable))
+private val Mono = FontFamily.Monospace
 
 private val LitterColorScheme =
     darkColorScheme(

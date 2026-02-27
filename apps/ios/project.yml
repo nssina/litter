@@ -1,6 +1,6 @@
 name: Litter
 options:
-  bundleIdPrefix: com.sigkitten
+  bundleIdPrefix: com.litter
   deploymentTarget:
     iOS: "26.0"
   xcodeVersion: "16.0"

@@ -48,17 +48,8 @@ enum LitterTheme {
 }
 
 enum LitterFont {
-    private static let fontNameCandidates = [
-        "BerkeleyMonoVariable-Regular",
-        "Berkeley Mono Variable",
-    ]
-
-    private static let resolvedFontName: String? = {
-        fontNameCandidates.first(where: { UIFont(name: $0, size: 12) != nil })
-    }()
-
     static var markdownFontName: String {
-        resolvedFontName ?? "SFMono-Regular"
+        "SFMono-Regular"
     }
 
     static func monospaced(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
@@ -71,17 +62,10 @@ enum LitterFont {
     }
 
     private static func monospaced(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle?) -> Font {
-        guard let resolvedFontName else {
-            if let style {
-                return .system(style, design: .monospaced, weight: weight)
-            }
-            return .system(size: size, weight: weight, design: .monospaced)
-        }
-
         if let style {
-            return .custom(resolvedFontName, size: size, relativeTo: style).weight(weight)
+            return .system(style, design: .monospaced, weight: weight)
         }
-        return .custom(resolvedFontName, size: size).weight(weight)
+        return .system(size: size, weight: weight, design: .monospaced)
     }
 }
 

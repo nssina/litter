@@ -148,7 +148,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litter.android.core.network.DiscoverySource
 import com.litter.android.state.AccountState
@@ -165,8 +164,8 @@ import com.litter.android.state.SkillMentionInput
 import com.litter.android.state.SkillMetadata
 import com.litter.android.state.ThreadKey
 import com.litter.android.state.ThreadState
-import com.sigkitten.litter.android.BuildConfig
-import com.sigkitten.litter.android.R
+import com.litter.android.BuildConfig
+import com.litter.android.R
 import io.noties.markwon.Markwon
 import io.noties.markwon.syntax.Prism4jThemeDarkula
 import io.noties.markwon.syntax.SyntaxHighlightPlugin
@@ -187,8 +186,7 @@ import java.util.Locale
 
 private const val PERF_LOG_TAG = "LitterComposePerf"
 
-private fun Context.berkeleyMonoTypeface(): Typeface =
-    ResourcesCompat.getFont(this, R.font.berkeley_mono_variable) ?: Typeface.MONOSPACE
+private fun Context.monospaceTypeface(): Typeface = Typeface.MONOSPACE
 
 @Composable
 private fun DebugRecomposeCheckpoint(name: String) {
@@ -2197,7 +2195,7 @@ private fun AssistantMarkdownText(
         modifier = modifier,
         factory = { context ->
             TextView(context).apply {
-                typeface = context.berkeleyMonoTypeface()
+                typeface = context.monospaceTypeface()
                 textSize = 14f
                 setTextColor(textColor.toArgb())
                 setLineSpacing(0f, 1.2f)
@@ -2295,7 +2293,7 @@ private fun CodeBlockCard(
                 AndroidView(
                     factory = { context ->
                         TextView(context).apply {
-                            typeface = context.berkeleyMonoTypeface()
+                            typeface = context.monospaceTypeface()
                             textSize = 12f
                             setLineSpacing(0f, 1.2f)
                             setTextColor(LitterTheme.textBody.toArgb())
@@ -5773,6 +5771,26 @@ private fun SettingsSheetContent(
                     Text(accountState.summaryTitle, color = LitterTheme.textSecondary, style = MaterialTheme.typography.labelLarge)
                 }
                 Text("Open", color = LitterTheme.accent, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+
+        Text("Typography", color = LitterTheme.textSecondary, style = MaterialTheme.typography.labelLarge)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = LitterTheme.surface.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LitterTheme.border),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("Custom Font", color = LitterTheme.textPrimary)
+                Text(
+                    "Berkeley Mono is not bundled. Please upload your own licensed .otf or .ttf monospace font.",
+                    color = LitterTheme.textSecondary,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
 

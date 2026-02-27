@@ -77,6 +77,21 @@ struct SettingsView: View {
                         Text("Servers")
                             .foregroundColor(LitterTheme.textSecondary)
                     }
+
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Custom Font")
+                                .font(LitterFont.monospaced(.subheadline))
+                                .foregroundColor(.white)
+                            Text("Berkeley Mono is not bundled. Please upload your own licensed .otf or .ttf monospace font.")
+                                .font(LitterFont.monospaced(.caption))
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    } header: {
+                        Text("Typography")
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
                 }
                 .scrollContentBackground(.hidden)
             }
