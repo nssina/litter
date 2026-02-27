@@ -14,7 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
-import com.makyinc.litter.android.R
+import com.sigkitten.litter.android.R
 
 object LitterTheme {
     val accent = Color(0xFFB0B0B0)
